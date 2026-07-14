@@ -21,10 +21,14 @@ concurrency:
 
 jobs:
   fix:
+    # Routed by branch prefix, not actor: after a human reruns or reopens a
+    # PR the triggering actor changes, but the branch still says whose PR
+    # it is. dependabot/* belongs to fix-dependabot.yml; claude/* is our
+    # own fix branch (loop guard).
     if: >
       github.event.workflow_run.conclusion == 'failure' &&
       github.event.workflow_run.head_repository.full_name == github.repository &&
-      github.event.workflow_run.actor.login != 'dependabot[bot]' &&
+      !startsWith(github.event.workflow_run.head_branch, 'dependabot/') &&
       !startsWith(github.event.workflow_run.head_branch, 'claude/')
     runs-on: ubuntu-latest
     steps:
@@ -69,4 +73,4 @@ jobs:
           claude_args: >
             --model claude-opus-4-8
             --max-turns 40
-            --allowedTools "Edit,MultiEdit,Write,Read,Glob,Grep,Bash(git:*),Bash(pnpm:*),Bash(npx:*),Bash(gh:*),Bash(node:*),Bash(cd:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(grep:*),Bash(rg:*),Bash(find:*),Bash(wc:*),Bash(mkdir:*),Bash(cp:*),Bash(mv:*),Bash(pwd)"
+            --allowedTools "Edit,MultiEdit,Write,Read,Glob,Grep,Bash(git:*),Bash(pnpm:*),Bash(npx:*),Bash(gh:*),Bash(node:*),Bash(cd:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(grep:*),Bash(rg:*),Bash(find:*),Bash(wc:*),Bash(mkdir:*),Bash(cp:*),Bash(mv:*),Bash(pwd),Bash(diff:*),Bash(sed:*),Bash(echo:*),Bash(jq:*),Bash(sort:*)"
