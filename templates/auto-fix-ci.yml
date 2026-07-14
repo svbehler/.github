@@ -1,0 +1,61 @@
+# Reacts to failed runs of the "CI" workflow (excluding Dependabot, which
+# fix-dependabot.yml owns). On a PR branch it commits the fix directly; on
+# main it opens a claude/ fix PR. Based on the official example:
+# https://github.com/anthropics/claude-code-action/blob/main/examples/ci-failure-auto-fix.yml
+name: Auto-fix CI failures
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+  id-token: write
+
+concurrency:
+  group: auto-fix-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    if: >
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.actor.login != 'dependabot[bot]' &&
+      !startsWith(github.event.workflow_run.head_branch, 'claude/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+          fetch-depth: 0
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          additional_permissions: |
+            actions: read
+          prompt: |
+            CI failed on branch "${{ github.event.workflow_run.head_branch }}".
+            Failed run: ${{ github.event.workflow_run.html_url }}
+
+            1. Read the failure logs:
+               gh run view ${{ github.event.workflow_run.id }} --log-failed
+            2. Diagnose and fix the root cause. Never paper over failures:
+               no skipped tests, no lint-disable comments, no loosened tsconfig.
+            3. Re-run the failing commands (pnpm lint / typecheck / test / build)
+               to confirm the fix before committing.
+            4. If this branch belongs to an open PR, commit to it with a message
+               starting "auto-fix:" and comment on the PR summarizing cause and fix.
+               If the branch is main, create a branch
+               claude/ci-fix-${{ github.event.workflow_run.id }}, commit there,
+               push, and open a PR with gh pr create.
+            5. If the failure needs a human decision (secrets, infrastructure,
+               ambiguous product behavior), do NOT commit - comment explaining
+               exactly what is needed instead.
+          claude_args: >
+            --model claude-opus-4-8
+            --max-turns 20
+            --allowedTools "Edit,MultiEdit,Write,Read,Glob,Grep,Bash(git:*),Bash(pnpm:*),Bash(npx:*),Bash(gh:*)"

@@ -1,0 +1,61 @@
+# Dependabot-triggered workflows run with a read-only token and without
+# normal Actions secrets, so this fixer triggers from workflow_run instead
+# (base-repo context, full secrets). Per the action's security guide, the
+# trusted base ref sits at the workspace root and the PR head is checked
+# out into a subdirectory, exposed to Claude via --add-dir:
+# https://github.com/anthropics/claude-code-action/blob/main/docs/security.md
+name: Fix Dependabot PRs
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+  id-token: write
+
+jobs:
+  fix:
+    if: >
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.actor.login == 'dependabot[bot]' &&
+      github.event.workflow_run.pull_requests[0]
+    runs-on: ubuntu-latest
+    steps:
+      # Trusted base ref at the workspace root.
+      - uses: actions/checkout@v6
+      # PR head in a subdirectory - never at root (see action security guide).
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          path: pr-head
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          additional_permissions: |
+            actions: read
+          prompt: |
+            A Dependabot dependency-bump PR failed CI.
+            PR: #${{ github.event.workflow_run.pull_requests[0].number }}
+            Head branch: ${{ github.event.workflow_run.head_branch }}
+            The PR working tree is in ./pr-head.
+
+            1. Read the failure logs:
+               gh run view ${{ github.event.workflow_run.id }} --log-failed
+            2. In ./pr-head, adapt the code to the new dependency version:
+               type changes, renamed or removed APIs, config migrations,
+               lockfile updates. Run pnpm lint / typecheck / test / build
+               there to confirm.
+            3. Commit to the PR head branch with a message starting "auto-fix:"
+               and comment on the PR summarizing what the bump broke and how
+               you adapted the code.
+            4. If the new major version needs a real migration decision,
+               do NOT commit - comment with a migration outline instead.
+          claude_args: >
+            --add-dir pr-head
+            --model claude-opus-4-8
+            --max-turns 20
+            --allowedTools "Edit,MultiEdit,Write,Read,Glob,Grep,Bash(git:*),Bash(pnpm:*),Bash(npx:*),Bash(gh:*)"
