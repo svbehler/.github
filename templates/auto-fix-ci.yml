@@ -59,8 +59,10 @@ jobs:
                gh run view ${{ github.event.workflow_run.id }} --log-failed
             2. Diagnose and fix the root cause. Never paper over failures:
                no skipped tests, no lint-disable comments, no loosened tsconfig.
-            3. Re-run the failing commands (pnpm lint / typecheck / test / build)
-               to confirm the fix before committing.
+            3. Confirm the fix by re-running every check the repo's CI
+               workflow (.github/workflows/ci.yml) runs - typically lint,
+               typecheck, prettier --check, tests, and build. Format files
+               you touched with pnpm exec prettier --write.
             4. If this branch belongs to an open PR, commit to it with a message
                starting "auto-fix:" and comment on the PR summarizing cause and fix.
                If there is no open PR (a long-lived branch like main or staging),

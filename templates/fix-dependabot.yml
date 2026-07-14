@@ -65,8 +65,10 @@ jobs:
                gh run view ${{ github.event.workflow_run.id }} --log-failed
             2. In ./pr-head, adapt the code to the new dependency version:
                type changes, renamed or removed APIs, config migrations,
-               lockfile updates. Run pnpm lint / typecheck / test / build
-               there to confirm.
+               lockfile updates. Confirm by re-running every check the repo's
+               CI workflow (.github/workflows/ci.yml) runs - typically
+               lint, typecheck, prettier --check, tests, and build. Format
+               files you touched with pnpm exec prettier --write.
             3. Commit to the PR head branch with a message starting "auto-fix:"
                and comment on the PR summarizing what the bump broke and how
                you adapted the code.
