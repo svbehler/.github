@@ -1,3 +1,6 @@
+# The group name "minor-and-patch" is load-bearing: dependabot-auto-merge.yml
+# only merges PR branches containing it, which is what keeps majors
+# (individual PRs) out of auto-merge.
 version: 2
 updates:
   - package-ecosystem: npm
@@ -15,3 +18,6 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]

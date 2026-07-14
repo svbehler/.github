@@ -1,24 +1,33 @@
-# Enables GitHub auto-merge on non-major Dependabot PRs. The merge only
-# happens once the required status checks on main pass (enforced by the
-# repo ruleset), so a red CI run keeps the PR open for the Dependabot
-# fixer / human review.
+# Merges Dependabot group PRs (minor+patch only) after CI succeeds.
+# Majors arrive as individual PRs and are never auto-merged.
+#
+# GitHub's native auto-merge and required-check rulesets need GitHub Pro
+# on private repos, so this merges explicitly on a green workflow_run
+# instead of enabling auto-merge at PR-open time. If the account moves to
+# Pro (or the repo goes public), the ruleset in scripts/rollout.sh adds
+# server-side enforcement on top; this workflow keeps working either way.
 name: Dependabot auto-merge
 
-on: pull_request
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
 
 permissions:
   contents: write
   pull-requests: write
 
 jobs:
-  auto-merge:
-    if: github.actor == 'dependabot[bot]'
+  merge:
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.actor.login == 'dependabot[bot]' &&
+      github.event.workflow_run.pull_requests[0] &&
+      contains(github.event.workflow_run.head_branch, 'minor-and-patch')
     runs-on: ubuntu-latest
     steps:
-      - id: metadata
-        uses: dependabot/fetch-metadata@v2
-      - if: steps.metadata.outputs.update-type != 'version-update:semver-major'
-        run: gh pr merge --auto --squash "$PR_URL"
+      - run: gh pr merge --squash --repo "$REPO" "$PR_NUMBER"
         env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

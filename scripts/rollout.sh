@@ -3,9 +3,11 @@
 #
 # Usage: rollout.sh <path-to-local-repo-checkout>
 #
-# Copies the template files, commits and pushes them, enables auto-merge
-# on the repo, and creates the main ruleset (required "CI" check with
-# admin bypass so direct pushes to main keep working).
+# Copies the template files, commits and pushes them, and (best effort)
+# creates the main ruleset (required "CI" check with admin bypass so
+# direct pushes to main keep working). Rulesets need GitHub Pro on
+# private repos; without them, dependabot-auto-merge.yml still gates
+# merges on a green CI run in workflow logic.
 #
 # NOT done by this script (one-time, interactive):
 #   - Installing the Claude GitHub App on the repo (claude /install-github-app)
@@ -46,14 +48,13 @@ else
   git push
 fi
 
-echo "==> Enabling auto-merge on $REPO_SLUG"
-gh api -X PATCH "repos/$REPO_SLUG" -F allow_auto_merge=true --silent
-
 if gh api "repos/$REPO_SLUG/rulesets" -q '.[].name' | grep -qx "main-required-ci"; then
   echo "==> Ruleset main-required-ci already exists; skipping."
 else
   echo "==> Creating main ruleset (required check: $REQUIRED_CHECK, admin bypass)"
-  gh api -X POST "repos/$REPO_SLUG/rulesets" --input - <<JSON
+  echo "    (403 = private repo on free plan; merge gating then relies on"
+  echo "    dependabot-auto-merge.yml's green-CI condition, which is fine)"
+  gh api -X POST "repos/$REPO_SLUG/rulesets" --input - <<JSON || true
 {
   "name": "main-required-ci",
   "target": "branch",

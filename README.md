@@ -10,10 +10,10 @@ Full background: the "Automated CI/CD failure fixing" proposal (2026-07).
 | `.github/workflows/reusable-ci.yml` | The one CI definition every repo calls: pnpm install → lint → typecheck → test → check → build (each `--if-present`). |
 | `templates/ci.yml` | Per-repo caller. The workflow name `CI` is load-bearing — both fixers trigger on it. |
 | `templates/dependabot.yml` | Weekly, minor+patch grouped into one PR; also tracks GitHub Actions versions. |
-| `templates/dependabot-auto-merge.yml` | Auto-merges green non-major Dependabot PRs (gated by the required-check ruleset). |
+| `templates/dependabot-auto-merge.yml` | Merges Dependabot minor+patch group PRs after a green CI run (majors are individual PRs and never auto-merged). |
 | `templates/auto-fix-ci.yml` | Claude fixer for failed CI runs (non-Dependabot). Commits to the PR branch, or opens a `claude/` PR for failures on main. |
 | `templates/fix-dependabot.yml` | Claude fixer for Dependabot PRs that break CI. Runs from `workflow_run` (base context) with the PR head in a subdirectory, per the action's security guide. |
-| `scripts/rollout.sh` | Copies the templates into a repo, pushes, enables auto-merge, creates the main ruleset. |
+| `scripts/rollout.sh` | Copies the templates into a repo, pushes, and (best effort) creates the main ruleset. |
 
 ## Per-repo requirements
 
@@ -40,5 +40,9 @@ Full background: the "Automated CI/CD failure fixing" proposal (2026-07).
   Dependabot branches.
 - The Claude app has no `workflows: write`, so the fixer can never modify
   workflow files. It never merges, rebases, or force-pushes.
-- The main ruleset requires the `ci / checks` status but gives repository
-  admins an always-bypass, so direct pushes to main keep working.
+- Auto-merge is gated on a successful CI `workflow_run` and on the
+  `minor-and-patch` group branch name — majors never auto-merge.
+- Required-check rulesets and GitHub's native auto-merge need GitHub Pro
+  on private repos. `rollout.sh` creates the ruleset where the plan
+  allows it (admin always-bypass keeps direct pushes to main working);
+  everywhere else the workflow-level gating above stands alone.
