@@ -34,7 +34,14 @@ if [ -n "$(git status --porcelain | grep -v '^??' || true)" ]; then
 fi
 
 mkdir -p .github/workflows
-cp "$TEMPLATES_DIR/ci.yml" .github/workflows/ci.yml
+if [ -e .github/workflows/ci.yml ]; then
+  echo "==> Existing ci.yml found — keeping it. Verify manually that it:"
+  echo "    - is named 'CI' (the fixers trigger on that name)"
+  echo "    - has a pull_request trigger (Dependabot/fix PRs need checks)"
+  echo "    - runs the build (the Vercel/Cloudflare front-run)"
+else
+  cp "$TEMPLATES_DIR/ci.yml" .github/workflows/ci.yml
+fi
 cp "$TEMPLATES_DIR/auto-fix-ci.yml" .github/workflows/auto-fix-ci.yml
 cp "$TEMPLATES_DIR/fix-dependabot.yml" .github/workflows/fix-dependabot.yml
 cp "$TEMPLATES_DIR/dependabot-auto-merge.yml" .github/workflows/dependabot-auto-merge.yml

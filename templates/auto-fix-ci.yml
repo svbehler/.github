@@ -49,9 +49,10 @@ jobs:
                to confirm the fix before committing.
             4. If this branch belongs to an open PR, commit to it with a message
                starting "auto-fix:" and comment on the PR summarizing cause and fix.
-               If the branch is main, create a branch
-               claude/ci-fix-${{ github.event.workflow_run.id }}, commit there,
-               push, and open a PR with gh pr create.
+               If there is no open PR (a long-lived branch like main or staging),
+               create a branch claude/ci-fix-${{ github.event.workflow_run.id }},
+               commit there, push, and open a PR against the failing branch
+               with gh pr create.
             5. If the failure needs a human decision (secrets, infrastructure,
                ambiguous product behavior), do NOT commit - comment explaining
                exactly what is needed instead.
