@@ -13,7 +13,9 @@ Full background: the "Automated CI/CD failure fixing" proposal (2026-07).
 | `templates/dependabot-auto-merge.yml` | Merges Dependabot minor+patch group PRs after a green CI run (majors are individual PRs and never auto-merged). |
 | `templates/auto-fix-ci.yml` | Claude fixer for failed CI runs (non-Dependabot). Commits to the PR branch, or opens a `claude/` PR for failures on main. |
 | `templates/fix-dependabot.yml` | Claude fixer for Dependabot PRs that break CI. Runs from `workflow_run` (base context) with the PR head in a subdirectory, per the action's security guide. |
+| `templates/dependabot-major-triage.yml` | Weekly (Mon 07:00 UTC) Claude triage of open Dependabot major PRs: comments a `MERGE`/`HOLD` verdict per PR. A free gate job skips Claude entirely when no majors are open. Read-only — never touches code. |
 | `scripts/rollout.sh` | Copies the templates into a repo, pushes, and (best effort) creates the main ruleset. |
+| `scripts/pr-queue.sh` | The human review queue: lists open PRs across all active repos, categorized (fixer PRs, untriaged/triaged majors, stalled group PRs, other). `--nudge` close/reopens stalled group PRs so CI re-runs and auto-merge can proceed. |
 
 ## Per-repo requirements
 

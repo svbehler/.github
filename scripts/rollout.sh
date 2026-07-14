@@ -45,6 +45,7 @@ fi
 cp "$TEMPLATES_DIR/auto-fix-ci.yml" .github/workflows/auto-fix-ci.yml
 cp "$TEMPLATES_DIR/fix-dependabot.yml" .github/workflows/fix-dependabot.yml
 cp "$TEMPLATES_DIR/dependabot-auto-merge.yml" .github/workflows/dependabot-auto-merge.yml
+cp "$TEMPLATES_DIR/dependabot-major-triage.yml" .github/workflows/dependabot-major-triage.yml
 cp "$TEMPLATES_DIR/dependabot.yml" .github/dependabot.yml
 
 git add .github

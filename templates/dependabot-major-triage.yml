@@ -1,0 +1,81 @@
+# Weekly triage of Dependabot MAJOR-version PRs. Majors never auto-merge
+# (the auto-merge workflow only takes the minor-and-patch group), so they
+# pile up until a human decides. This leaves a MERGE/HOLD verdict comment
+# on each untriaged major so the decision is pre-chewed.
+#
+# The gate job costs nothing; the Claude job only runs when open majors
+# exist. Note: GitHub disables cron workflows after 60 days without repo
+# activity - re-enable from the Actions tab if that happens.
+name: Dependabot Major Triage
+
+on:
+  schedule:
+    # Mondays 07:00 UTC, after Dependabot's weekly morning run.
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      prs: ${{ steps.list.outputs.prs }}
+      count: ${{ steps.list.outputs.count }}
+    steps:
+      - id: list
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prs=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 100 \
+            --json number,title,headRefName \
+            --jq '[.[] | select(.headRefName | startswith("dependabot/"))
+                       | select(.headRefName | contains("minor-and-patch") | not)]')
+          echo "count=$(jq length <<<"$prs")" >> "$GITHUB_OUTPUT"
+          echo "prs=$(jq -c . <<<"$prs")" >> "$GITHUB_OUTPUT"
+
+  triage:
+    needs: gate
+    if: needs.gate.outputs.count != '0'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            These open Dependabot MAJOR-version bump PRs never auto-merge
+            and are waiting on a human decision. Pre-chew that decision.
+
+            PRs (JSON): ${{ needs.gate.outputs.prs }}
+
+            For each PR:
+            1. Skip it if it already has a comment containing
+               "<!-- major-triage -->" (gh pr view <n> --json comments).
+            2. Otherwise, work out what the major actually breaks:
+               - release notes / changelog (npm view <pkg>, or gh api /
+                 gh release view on the package's GitHub repo)
+               - grep this repo (checked out at the workspace root) for
+                 usage of the changed or removed APIs
+            3. Comment a verdict on the PR in exactly this shape:
+
+               <!-- major-triage -->
+               **Verdict: MERGE** (or **Verdict: HOLD**)
+
+               ...followed by 3-6 lines: what changed in the major,
+               whether this repo's usage is affected, and - for HOLD -
+               what migration work is needed before merging.
+
+            MERGE = no breaking change touches this repo's actual usage;
+            merging is safe. HOLD = code changes or a real decision are
+            needed first. When unsure, HOLD.
+
+            Never modify code, never merge, close, or reopen PRs -
+            verdict comments only.
+          claude_args: >
+            --model claude-opus-4-8
+            --max-turns 30
+            --allowedTools "Read,Glob,Grep,Bash(gh:*),Bash(npm view:*),Bash(cat:*),Bash(ls:*),Bash(head:*),Bash(tail:*),Bash(grep:*),Bash(rg:*),Bash(find:*),Bash(jq:*),Bash(wc:*)"
