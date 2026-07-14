@@ -32,6 +32,14 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_branch }}
           fetch-depth: 0
+      # Provision the toolchain up front — the fixer cannot install it
+      # itself, and a bare runner burns its turn budget on missing tools.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -40,6 +48,8 @@ jobs:
           prompt: |
             CI failed on branch "${{ github.event.workflow_run.head_branch }}".
             Failed run: ${{ github.event.workflow_run.html_url }}
+
+            Dependencies are already installed (pnpm install has run).
 
             1. Read the failure logs:
                gh run view ${{ github.event.workflow_run.id }} --log-failed
@@ -58,5 +68,5 @@ jobs:
                exactly what is needed instead.
           claude_args: >
             --model claude-opus-4-8
-            --max-turns 20
-            --allowedTools "Edit,MultiEdit,Write,Read,Glob,Grep,Bash(git:*),Bash(pnpm:*),Bash(npx:*),Bash(gh:*)"
+            --max-turns 40
+            --allowedTools "Edit,MultiEdit,Write,Read,Glob,Grep,Bash(git:*),Bash(pnpm:*),Bash(npx:*),Bash(gh:*),Bash(node:*),Bash(cd:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(grep:*),Bash(rg:*),Bash(find:*),Bash(wc:*),Bash(mkdir:*),Bash(cp:*),Bash(mv:*),Bash(pwd)"

@@ -32,6 +32,18 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           path: pr-head
+      # Provision the toolchain up front — the fixer cannot install it
+      # itself, and a bare runner burns its turn budget on missing tools.
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: pr-head/package.json
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pr-head/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: pr-head
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -41,7 +53,8 @@ jobs:
             A Dependabot dependency-bump PR failed CI.
             PR: #${{ github.event.workflow_run.pull_requests[0].number }}
             Head branch: ${{ github.event.workflow_run.head_branch }}
-            The PR working tree is in ./pr-head.
+            The PR working tree is in ./pr-head, with dependencies already
+            installed (pnpm install has run there).
 
             1. Read the failure logs:
                gh run view ${{ github.event.workflow_run.id }} --log-failed
@@ -57,5 +70,5 @@ jobs:
           claude_args: >
             --add-dir pr-head
             --model claude-opus-4-8
-            --max-turns 20
-            --allowedTools "Edit,MultiEdit,Write,Read,Glob,Grep,Bash(git:*),Bash(pnpm:*),Bash(npx:*),Bash(gh:*)"
+            --max-turns 40
+            --allowedTools "Edit,MultiEdit,Write,Read,Glob,Grep,Bash(git:*),Bash(pnpm:*),Bash(npx:*),Bash(gh:*),Bash(node:*),Bash(cd:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(grep:*),Bash(rg:*),Bash(find:*),Bash(wc:*),Bash(mkdir:*),Bash(cp:*),Bash(mv:*),Bash(pwd)"
