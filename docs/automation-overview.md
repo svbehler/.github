@@ -80,6 +80,37 @@ This flow was validated end-to-end live on xpo-inventory PR #25: a
 47-package group bump broke CI twice (Stripe API version + prettier 3.9
 style drift), the fixer repaired both, and auto-merge landed it.
 
+## The PostHog error lane (production errors, 4 repos)
+
+Production runtime errors get the same treatment as CI failures on the
+four PostHog-instrumented product repos (targical, xpo-inventory,
+xpo-market, certaince). Two lanes, nothing auto-merges:
+
+- **Event lane:** a PostHog error-tracking alert (issue created /
+  reopened) fires a webhook destination that POSTs a
+  `repository_dispatch` of type `posthog-error` to the repo.
+  `workflows/fix-posthog-error.yml` dedupes against open issues/PRs by
+  PostHog issue id, then triages: app bug with a confident root cause →
+  fix PR on `claude/posthog-<id>`; infra/transient or unclear → GitHub
+  issue labeled `posthog-error`.
+- **Weekly backstop:** `workflows/posthog-error-triage.yml` sweeps the
+  last 7 days of PostHog error tracking (staggered Mondays: targical
+  06:00, xpo-inventory 06:15, xpo-market 06:30, certaince 06:45 UTC),
+  catching slow-burn regressions the new-issue alert misses.
+
+Parameterized templates for both live in `templates/` (placeholders
+`{{REPO_DESC}}`, `{{TRIAGE_DESC}}`, `{{CRON}}`,
+`{{POSTHOG_PROJECT_ID}}`) — deliberately NOT copied by `rollout.sh`;
+substitute the placeholders manually per repo. Per-repo requirements
+beyond the standard ones: a `POSTHOG_API_KEY` secret (read-only PostHog
+personal key: `query:read` + `error_tracking:read`), a `posthog-error`
+label, a PostHog alert hog function holding a fine-grained GitHub PAT
+(Contents: RW) in its Authorization header, and exception capture
+actually enabled in the app. One shared PAT covers all four repos;
+regenerating it invalidates the old value immediately — re-PATCH all
+four PostHog destinations (a PATCH must resend the full `inputs`
+object). Detailed runbook: `targical/docs/posthog-error-automation.md`.
+
 ## The known gap: fixer commits don't retrigger CI (decision D3)
 
 Fixers push with the workflow's built-in `GITHUB_TOKEN`, and GitHub
