@@ -9,7 +9,8 @@ each active repo carries its own copy of the workflow files.
 
 ## The one-paragraph version
 
-Dependabot opens dependency PRs every Monday. CI runs on every PR and every
+Dependabot opens dependency PRs on Mondays (weekly on the active products,
+monthly on low-churn repos). CI runs on every PR and every
 push to main. When CI fails, a Claude fixer (running on the Anthropic
 **subscription**, not API billing) reads the failure logs, fixes the root
 cause, commits to the branch, and reports what it did. Green minor/patch
@@ -33,7 +34,7 @@ Each active repo has these files under `.github/`:
 | File | What it does |
 | --- | --- |
 | `workflows/ci.yml` | The CI workflow. Repos without their own CI call the shared `reusable-ci.yml` from this repo (pnpm install → lint → typecheck → test → check → build, each `--if-present`). Repos with pre-existing CI (xpo-inventory, xpo-market, certaince, targical) kept theirs, extended with a `pull_request` trigger, a build step, and concurrency. **The workflow name `CI` is load-bearing** — everything below listens for it by name. |
-| `dependabot.yml` | Weekly (Monday) npm + github-actions updates. Minor+patch bumps are **grouped into one PR** named `minor-and-patch` — that group name is also load-bearing. Majors arrive as individual PRs. |
+| `dependabot.yml` | npm + github-actions updates. Cadence differs by repo: **weekly (Monday)** on the active products (xpo-inventory, xpo-market, certaince, targical), **monthly** on the low-churn repos (emily-kirby, bc-to-datev, tempo-website, ai-company-profiler) to keep noise down. Minor+patch bumps are **grouped into one PR** named `minor-and-patch` — that group name is also load-bearing. Majors arrive as individual PRs. |
 | `workflows/dependabot-auto-merge.yml` | When a CI `workflow_run` succeeds on a branch containing `minor-and-patch`, squash-merges the PR. This replaces GitHub's native auto-merge and branch rulesets, which the free plan doesn't offer on private repos. |
 | `workflows/fix-dependabot.yml` | Claude fixer for Dependabot PRs that break CI. Adapts the code to the new dependency version (type changes, renamed APIs, config migrations), verifies against the repo's actual CI checks, commits `auto-fix:` to the PR branch, and comments. If the bump needs a real migration decision, it comments an outline instead of committing. |
 | `workflows/auto-fix-ci.yml` | Claude fixer for everything else that breaks CI (pushes to main, feature PRs). Commits to the PR branch, or — for failures on main — opens a `claude/ci-fix-<runid>` PR. Skips `dependabot/*` and `claude/*` branches. |
@@ -138,6 +139,11 @@ the Vercel preview failed". `ci=none` means no checks ran on the head commit
 A suggested Monday routine: let Dependabot + fixers + auto-merge do their
 thing in the morning, run `pr-queue.sh` after lunch, `--nudge` the stalled
 ones, merge the green fixer PRs and the `[MERGE]` majors you care about.
+
+**Email is not the signal — this queue is.** The active repos are unwatched
+(bot PRs/comments/merges don't email; participating and @mentions still do),
+and Actions "run failed" emails can be turned off under GitHub Settings →
+Notifications → Actions (UI-only; failures still show as red `ci=` here).
 
 ### Manual levers
 
