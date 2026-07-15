@@ -23,9 +23,10 @@ one screen.
 
 | Set | Repos | Automation |
 | --- | --- | --- |
-| Active (8) | xpo-inventory, xpo-market, certaince, targical, emily-kirby, bc-to-datev (local dir `bc-to-datev-csv`), tempo-website, ai-company-profiler | Full: CI + Dependabot + fixers + auto-merge + major triage |
-| Silenced (2) | osd-website, isaco-website | **Delivered live client projects — do not touch.** Actions is disabled repo-wide (which also stops Dependabot), zero commits allowed: a push to main would trigger a Vercel production deploy. The workflow files are present but inert. Revive with `gh api -X PUT repos/svbehler/<repo>/actions/permissions -F enabled=true`. |
-| Wave 3 (later) | tombox, aeo-platform, ai-content, message-mgr, certaince-news-accumulator, xtm-outreach, mafu-sherpa-* | Rolled out via `scripts/rollout.sh` when they get GitHub remotes. The two SHERPA-\*-PTE repos are AL-Go/Business Central and out of scope. |
+| Active (7) | xpo-inventory, xpo-market, certaince, targical, emily-kirby, bc-to-datev (local dir `bc-to-datev-csv`), tempo-website | Full: CI + Dependabot + fixers + auto-merge + major triage |
+| Silenced (2) | osd-website, isaco-website | **Delivered live client projects — do not touch.** Actions is disabled repo-wide (which also stops Dependabot), zero commits allowed: a push to main would trigger a Vercel production deploy. The workflow files are present but inert. Revive with `gh api -X PUT repos/svbehler/<repo>/actions/permissions -F enabled=true`. isaco-website's local checkout now lives in `~/projects-archive`. |
+| Archived (1) | ai-company-profiler | Local checkout moved to `~/projects-archive` 2026-07-15. Actions disabled repo-wide (same mechanism as the silenced repos, same revive command), open bot PRs closed, removed from `pr-queue.sh`. Workflow files and `dependabot.yml` remain in the repo but are inert. |
+| Wave 3 (later) | tombox, aeo-platform, certaince-news-accumulator, mafu-sherpa-* | Rolled out via `scripts/rollout.sh` when they get GitHub remotes. The two SHERPA-\*-PTE repos are AL-Go/Business Central and out of scope. ai-content, message-mgr, and xtm-outreach were dropped from this wave when they moved to `~/projects-archive` (2026-07-15). |
 
 ## The pieces
 
@@ -34,7 +35,7 @@ Each active repo has these files under `.github/`:
 | File | What it does |
 | --- | --- |
 | `workflows/ci.yml` | The CI workflow. Repos without their own CI call the shared `reusable-ci.yml` from this repo (pnpm install → lint → typecheck → test → check → build, each `--if-present`). Repos with pre-existing CI (xpo-inventory, xpo-market, certaince, targical) kept theirs, extended with a `pull_request` trigger, a build step, and concurrency. **The workflow name `CI` is load-bearing** — everything below listens for it by name. |
-| `dependabot.yml` | npm + github-actions updates. Cadence differs by repo: **weekly (Monday)** on the active products (xpo-inventory, xpo-market, certaince, targical), **monthly** on the low-churn repos (emily-kirby, bc-to-datev, tempo-website, ai-company-profiler) to keep noise down. Minor+patch bumps are **grouped into one PR** named `minor-and-patch` — that group name is also load-bearing. Majors arrive as individual PRs. |
+| `dependabot.yml` | npm + github-actions updates. Cadence differs by repo: **weekly (Monday)** on the active products (xpo-inventory, xpo-market, certaince, targical), **monthly** on the low-churn repos (emily-kirby, bc-to-datev, tempo-website) to keep noise down. Minor+patch bumps are **grouped into one PR** named `minor-and-patch` — that group name is also load-bearing. Majors arrive as individual PRs. |
 | `workflows/dependabot-auto-merge.yml` | When a CI `workflow_run` succeeds on a branch containing `minor-and-patch`, squash-merges the PR. This replaces GitHub's native auto-merge and branch rulesets, which the free plan doesn't offer on private repos. |
 | `workflows/fix-dependabot.yml` | Claude fixer for Dependabot PRs that break CI. Adapts the code to the new dependency version (type changes, renamed APIs, config migrations), verifies against the repo's actual CI checks, commits `auto-fix:` to the PR branch, and comments. If the bump needs a real migration decision, it comments an outline instead of committing. |
 | `workflows/auto-fix-ci.yml` | Claude fixer for everything else that breaks CI (pushes to main, feature PRs). Commits to the PR branch, or — for failures on main — opens a `claude/ci-fix-<runid>` PR. Skips `dependabot/*` and `claude/*` branches. |
@@ -182,7 +183,7 @@ bash ~/projects/dot-github/scripts/pr-queue.sh          # what needs me?
 bash ~/projects/dot-github/scripts/pr-queue.sh --nudge  # unstick stalled group PRs
 ```
 
-It lists open PRs across all 8 active repos in four buckets:
+It lists open PRs across all 7 active repos in four buckets:
 
 | Bucket | Meaning | What you do |
 | --- | --- | --- |

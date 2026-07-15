@@ -27,7 +27,6 @@ REPOS=(
   emily-kirby
   bc-to-datev
   tempo-website
-  ai-company-profiler
 )
 
 NUDGE=0
