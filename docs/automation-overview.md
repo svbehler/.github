@@ -235,8 +235,11 @@ bash ~/projects/dot-github/scripts/rollout.sh <path-to-local-checkout>
 4. Builds that need env vars at build time: add them as Actions
    secrets/vars (`secrets: inherit` passes them through the reusable
    workflow). Payload CMS repos are the known hard case — `next build`
-   wants Postgres + `PAYLOAD_SECRET`, which is why osd/isaco builds can't
-   pass in plain CI (decision shelved along with those repos).
+   wants Postgres + `PAYLOAD_SECRET`. Solved on certaince (2026-07-15):
+   its ci.yml starts a `postgres:17-alpine` container under the expected
+   local name/port, creates the test DB + `payload` schema, and runs the
+   committed Payload migrations before `pnpm build`. Copy that pattern if
+   osd/isaco ever revive.
 
 ## Known rough edges
 
