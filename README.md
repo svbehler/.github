@@ -1,7 +1,8 @@
 # .github — shared CI/CD automation
 
 Shared CI definition and rollout templates for all TypeScript repos.
-Full background: the "Automated CI/CD failure fixing" proposal (2026-07).
+**Full explanation of the whole setup: [docs/automation-overview.md](docs/automation-overview.md).**
+Background: the "Automated CI/CD failure fixing" proposal (2026-07).
 
 ## What lives here
 
