@@ -98,6 +98,35 @@ xpo-market, certaince). Two lanes, nothing auto-merges:
   06:00, xpo-inventory 06:15, xpo-market 06:30, certaince 06:45 UTC),
   catching slow-burn regressions the new-issue alert misses.
 
+**How a production error flows through the event lane:**
+
+```
+PostHog error tracking: issue created / reopened
+                     │
+                     ▼
+      alert hog function POSTs repository_dispatch
+      "posthog-error" (the shared PAT lives only in
+      this webhook's Authorization header)
+                     │
+                     ▼
+   fix-posthog-error.yml: dedupe by PostHog issue id
+                     │
+        known ◀──────┴──────▶ new
+          │                    │
+   comments the           triages the code path
+   recurrence and              │
+   stops         app bug ◀─────┴─────▶ infra/transient/unclear
+                    │                        │
+          fix PR on claude/           GitHub issue labeled
+          posthog-<id> — you          posthog-error — you
+          review and merge            decide the next step
+```
+
+The weekly sweep is the same triage applied to everything PostHog saw
+in the last 7 days, minus the webhook hop — it queries PostHog directly
+with the read-only `POSTHOG_API_KEY` and compares against the existing
+`posthog-error` issues before filing anything.
+
 Parameterized templates for both live in `templates/` (placeholders
 `{{REPO_DESC}}`, `{{TRIAGE_DESC}}`, `{{CRON}}`,
 `{{POSTHOG_PROJECT_ID}}`) — deliberately NOT copied by `rollout.sh`;
