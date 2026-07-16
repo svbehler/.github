@@ -12,11 +12,11 @@ Background: the "Automated CI/CD failure fixing" proposal (2026-07).
 | `templates/ci.yml` | Per-repo caller for repos without existing CI. The workflow name `CI` is load-bearing — both fixers trigger on it. Existing CI must add a `pull_request` trigger and a build step. |
 | `templates/dependabot.yml` | Weekly, minor+patch grouped into one PR; also tracks GitHub Actions versions. |
 | `templates/dependabot-auto-merge.yml` | Merges Dependabot minor+patch group PRs after a green CI run (majors are individual PRs and never auto-merged). |
-| `templates/auto-fix-ci.yml` | Claude fixer for failed CI runs (non-Dependabot). Commits to the PR branch, or opens a `claude/` PR for failures on main. |
+| `templates/auto-fix-ci.yml` | Claude fixer for failed CI runs (non-Dependabot). Commits to the PR branch, or opens a `claude/` PR for failures on main. Failures needing a human (secrets, infrastructure) become issues labeled `ci-failure` when there is no PR to comment on. |
 | `templates/fix-dependabot.yml` | Claude fixer for Dependabot PRs that break CI. Runs from `workflow_run` (base context) with the PR head in a subdirectory, per the action's security guide. |
 | `templates/dependabot-major-triage.yml` | Weekly (Mon 07:00 UTC) Claude triage of open Dependabot major PRs: comments a `MERGE`/`HOLD` verdict per PR. A free gate job skips Claude entirely when no majors are open. Read-only — never touches code. |
 | `scripts/rollout.sh` | Copies the templates into a repo, pushes, and (best effort) creates the main ruleset. |
-| `scripts/pr-queue.sh` | The human review queue: lists open PRs across all active repos, categorized (fixer PRs, untriaged/triaged majors, stalled group PRs, other). `--nudge` close/reopens stalled group PRs so CI re-runs and auto-merge can proceed. |
+| `scripts/pr-queue.sh` | The human review queue: lists open PRs across all active repos, categorized (fixer PRs, untriaged/triaged majors, stalled group PRs, other), then automation-filed issues (`posthog-error` / `ci-failure` / `incident`) and a 7-day health sweep (failed scheduled runs, disabled workflows, open Dependabot security alerts). `--nudge` close/reopens stalled group PRs so CI re-runs and auto-merge can proceed. |
 
 ## Per-repo requirements
 

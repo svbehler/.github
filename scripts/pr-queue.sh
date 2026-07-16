@@ -12,9 +12,20 @@
 #            (decision D3), so these need a close/reopen nudge
 #   OTHER    everything else (your own feature PRs etc.)
 #
+# Below the PR buckets it also prints:
+#
+#   ISSUES   open issues the automation filed for a human - labels
+#            posthog-error (production errors), ci-failure (fixer
+#            couldn't fix), incident (deploy/smoke failures)
+#   HEALTH   the automation watching itself: scheduled workflow runs
+#            that failed in the last 7 days (token expiry, turn caps),
+#            workflows GitHub disabled (60-day cron decay), and open
+#            Dependabot security alerts per repo
+#
 # Usage: pr-queue.sh [--nudge]
-#   --nudge   close/reopen each STALLED PR to retrigger CI, then exit.
-#             On green CI the auto-merge workflow takes it from there.
+#   --nudge   close/reopen each STALLED PR to retrigger CI, then exit
+#             (skips the ISSUES/HEALTH sweep). On green CI the
+#             auto-merge workflow takes it from there.
 
 set -euo pipefail
 
@@ -100,11 +111,6 @@ for repo in "${REPOS[@]}"; do
   done
 done
 
-if [ -z "$rows" ]; then
-  echo "Queue is empty - nothing needs review."
-  exit 0
-fi
-
 print_section() {
   local cat="$1" heading="$2"
   local section
@@ -138,7 +144,85 @@ if [ "$NUDGE" = 1 ]; then
   exit 0
 fi
 
-print_section FIX     "Fixer PRs (claude/*) - review and merge/close"
-print_section MAJOR   "Dependabot majors - your call (weekly triage verdict in brackets)"
-print_section STALLED "Stalled group PRs - run with --nudge to retrigger CI"
-print_section OTHER   "Other open PRs"
+if [ -z "$rows" ]; then
+  echo "No open PRs."
+  echo
+else
+  print_section FIX     "Fixer PRs (claude/*) - review and merge/close"
+  print_section MAJOR   "Dependabot majors - your call (weekly triage verdict in brackets)"
+  print_section STALLED "Stalled group PRs - run with --nudge to retrigger CI"
+  print_section OTHER   "Other open PRs"
+fi
+
+# ---- ISSUES: what the automation filed for a human ----------------------
+# posthog-error = production error triage, ci-failure = the fixer needed a
+# human decision, incident = production deploy/smoke failure.
+
+issue_rows=""
+for repo in "${REPOS[@]}"; do
+  filtered=$(gh issue list -R "$OWNER/$repo" --state open --limit 100 \
+    --json number,title,labels \
+    --jq '.[]
+      | select([.labels[].name]
+          | any(. == "posthog-error" or . == "ci-failure" or . == "incident"))
+      | [ (.number | tostring),
+          ([.labels[].name
+            | select(. == "posthog-error" or . == "ci-failure" or . == "incident")]
+            | join(",")),
+          .title ]
+      | @tsv')
+  [ -z "$filtered" ] && continue
+  while IFS=$'\t' read -r number labels title; do
+    [ -z "$number" ] && continue
+    issue_rows+="$repo	$number	$labels	$title
+"
+  done <<<"$filtered"
+done
+
+if [ -n "$issue_rows" ]; then
+  echo "== Automation issues - decide or delegate =="
+  printf '%s' "$issue_rows" | while IFS=$'\t' read -r repo number labels title; do
+    printf '  %-19s #%-4s %-16s %s\n' "$repo" "$number" "[$labels]" "$title"
+    printf '      https://github.com/%s/%s/issues/%s\n' "$OWNER" "$repo" "$number"
+  done
+  echo
+fi
+
+# ---- HEALTH: the automation watching itself ------------------------------
+# Catches silent decay: scheduled runs failing (expired OAuth token, turn
+# caps), workflows GitHub disabled after 60 dormant days, and Dependabot
+# security alerts that never become PRs (transitive deps).
+
+since=$(date -u -d '7 days ago' +%Y-%m-%d)
+health=""
+for repo in "${REPOS[@]}"; do
+  notes=""
+
+  failed_sched=$(gh api -X GET "repos/$OWNER/$repo/actions/runs" \
+    -f event=schedule -f status=failure -f created=">=$since" -f per_page=50 \
+    --jq '[.workflow_runs[].name] | group_by(.) | map("\(.[0]) x\(length)") | join(", ")' \
+    2>/dev/null) || failed_sched=""
+  [ -n "$failed_sched" ] && notes+="      failed scheduled runs: $failed_sched"$'\n'
+
+  disabled=$(gh api -X GET "repos/$OWNER/$repo/actions/workflows" -f per_page=100 \
+    --jq '[.workflows[] | select(.state | startswith("disabled")) | "\(.name) (\(.state))"] | join(", ")' \
+    2>/dev/null) || disabled=""
+  [ -n "$disabled" ] && notes+="      disabled workflows: $disabled"$'\n'
+
+  # A 403 here means the Dependabot alerts feature is off for the repo -
+  # itself a health finding (vulnerabilities would go unseen).
+  alerts=$(gh api -X GET "repos/$OWNER/$repo/dependabot/alerts" \
+    -f state=open -f per_page=100 \
+    --jq 'group_by(.security_advisory.severity) | map("\(length) \(.[0].security_advisory.severity)") | join(", ")' \
+    2>/dev/null) || alerts="feature disabled - enable Dependabot alerts in repo settings"
+  [ -n "$alerts" ] && notes+="      open security alerts: $alerts"$'\n'
+
+  [ -n "$notes" ] && health+="  $repo"$'\n'"$notes"
+done
+
+echo "== Automation health (7-day sweep) =="
+if [ -n "$health" ]; then
+  printf '%s' "$health"
+else
+  echo "  All clear: no failed scheduled runs, disabled workflows, or open security alerts."
+fi

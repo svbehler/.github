@@ -12,6 +12,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  issues: write
   actions: read
   id-token: write
 
@@ -70,8 +71,13 @@ jobs:
                commit there, push, and open a PR against the failing branch
                with gh pr create.
             5. If the failure needs a human decision (secrets, infrastructure,
-               ambiguous product behavior), do NOT commit - comment explaining
-               exactly what is needed instead.
+               ambiguous product behavior), do NOT commit. If the branch has an
+               open PR, comment on it explaining exactly what is needed.
+               Otherwise (a long-lived branch like main) file a GitHub issue
+               labeled ci-failure titled "[ci] <short cause>" with the run
+               link and exactly what is needed - but first check open
+               ci-failure issues (gh issue list --label ci-failure) and
+               comment on a matching one instead of filing a duplicate.
           claude_args: >
             --model claude-opus-4-8
             --max-turns 40

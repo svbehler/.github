@@ -34,11 +34,11 @@ Each active repo has these files under `.github/`:
 
 | File | What it does |
 | --- | --- |
-| `workflows/ci.yml` | The CI workflow. Repos without their own CI call the shared `reusable-ci.yml` from this repo (pnpm install → lint → typecheck → test → check → build, each `--if-present`, plus the PR-only fallow audit lane below). Repos with pre-existing CI (xpo-inventory, xpo-market, certaince, targical) kept theirs, extended with a `pull_request` trigger, a build step, and concurrency. **The workflow name `CI` is load-bearing** — everything below listens for it by name. |
+| `workflows/ci.yml` | The CI workflow. Repos without their own CI call the shared `reusable-ci.yml` from this repo (pnpm install → lint → typecheck → test → check → build, each `--if-present`, plus the PR-only fallow audit lane below). Repos with pre-existing CI (xpo-inventory, xpo-market, certaince, targical) kept theirs, extended with a `pull_request` trigger, a build step, and concurrency. The three Vercel product repos additionally run a `vercel-deploy-watch` job on pushes to main (see the incident lane below). **The workflow name `CI` is load-bearing** — everything below listens for it by name. |
 | `dependabot.yml` | npm + github-actions updates. Cadence differs by repo: **weekly (Monday)** on the active products (xpo-inventory, xpo-market, certaince, targical), **monthly** on the low-churn repos (emily-kirby, bc-to-datev, tempo-website) to keep noise down. Minor+patch bumps are **grouped into one PR** named `minor-and-patch` — that group name is also load-bearing. Majors arrive as individual PRs. |
 | `workflows/dependabot-auto-merge.yml` | When a CI `workflow_run` succeeds on a branch containing `minor-and-patch`, squash-merges the PR. This replaces GitHub's native auto-merge and branch rulesets, which the free plan doesn't offer on private repos. |
 | `workflows/fix-dependabot.yml` | Claude fixer for Dependabot PRs that break CI. Adapts the code to the new dependency version (type changes, renamed APIs, config migrations), verifies against the repo's actual CI checks, commits `auto-fix:` to the PR branch, and comments. If the bump needs a real migration decision, it comments an outline instead of committing. |
-| `workflows/auto-fix-ci.yml` | Claude fixer for everything else that breaks CI (pushes to main, feature PRs). Commits to the PR branch, or — for failures on main — opens a `claude/ci-fix-<runid>` PR. Skips `dependabot/*` and `claude/*` branches. |
+| `workflows/auto-fix-ci.yml` | Claude fixer for everything else that breaks CI (pushes to main, feature PRs). Commits to the PR branch, or — for failures on main — opens a `claude/ci-fix-<runid>` PR. Skips `dependabot/*` and `claude/*` branches. When a failure needs a human (secrets, infrastructure, ambiguous behavior) and there is no PR to comment on, it files an issue labeled `ci-failure` instead. On targical, failures confined to the deploy/smoke jobs bypass the fixer entirely and become an `incident` issue (see the incident lane below). |
 | `workflows/dependabot-major-triage.yml` | Weekly (Mon 07:00 UTC) + manual dispatch. A free gate job lists open major PRs and skips Claude entirely when there are none. Otherwise Claude reads changelogs, greps the repo for affected usage, and comments a `**Verdict: MERGE**` or `**Verdict: HOLD**` (marked `<!-- major-triage -->`) on each untriaged major. Read-only: never touches code, never merges. |
 
 In this repo additionally:
@@ -182,6 +182,42 @@ a `.fallowrc.json`. False positives are handled with
 `fallow fix --yes` into CI — fix authority stays with the Claude fixer,
 which judges a finding before deleting anything.
 
+## The incident lane and issue conventions (since 2026-07-16)
+
+One principle aligns all lanes: **every failure terminates in a human
+queue, shaped by what it is.** Machine-confident fixes stay commits/PRs;
+anything needing a human becomes a labeled GitHub issue that
+`pr-queue.sh` surfaces. Three labels, pre-created on the relevant repos:
+
+| Label | Filed by | Meaning |
+| --- | --- | --- |
+| `posthog-error` | PostHog lanes | Production runtime error, triaged as infra/transient/unclear. |
+| `ci-failure` | CI fixers | The fixer hit something needing a human decision (secrets, infrastructure, ambiguous behavior) with no PR to comment on. |
+| `incident` | deploy watchers | A **production deploy or smoke test failed** — needs a human now (possibly a rollback), not a code-fix PR. |
+
+The `incident` label has two producers:
+
+- **targical** (Workers, deploys from CI): `auto-fix-ci.yml` first runs a
+  `route` job that lists the failed jobs of the CI run. If *only*
+  `Deploy API` / `Deploy Web` / `Prod smoke test` failed, it files or
+  updates the open `incident` issue and the Claude fixer never starts — a
+  deploy failure is usually infra (tokens, Cloudflare) or needs a
+  rollback, and a fixer would flail at it. If any check job failed too,
+  the normal fixer path runs (the code failure is the actionable part).
+- **Vercel product repos** (xpo-inventory, xpo-market, certaince): CI
+  front-runs build/lint/unit, but `drizzle-kit migrate` runs only inside
+  the Vercel build — a migrate-only failure used to fail the deploy with
+  no signal anywhere. A `vercel-deploy-watch` job (push to main only)
+  polls the GitHub Deployments API that Vercel's git integration
+  populates and files/updates the `incident` issue on `error`/`failure`.
+  The job itself stays green on purpose: the fixer cannot read Vercel
+  build logs, so triggering it would only burn turns — the issue is the
+  signal. Vercel keeps serving the last good deployment meanwhile.
+
+Issue filing is always dedupe-first (search open issues with the label,
+comment on a match instead of opening a duplicate), mirroring the
+PostHog lane.
+
 ## The known gap: fixer commits don't retrigger CI (decision D3)
 
 Fixers push with the workflow's built-in `GITHUB_TOKEN`, and GitHub
@@ -224,14 +260,17 @@ bash ~/projects/dot-github/scripts/pr-queue.sh          # what needs me?
 bash ~/projects/dot-github/scripts/pr-queue.sh --nudge  # unstick stalled group PRs
 ```
 
-It lists open PRs across all 7 active repos in four buckets:
+It lists open PRs across all 7 active repos in four buckets, followed by
+the automation-filed issues and a health sweep:
 
-| Bucket | Meaning | What you do |
+| Section | Meaning | What you do |
 | --- | --- | --- |
 | FIX | `claude/*` fixer PRs | Review the diff, merge or close. |
 | MAJOR | Dependabot majors, verdict in brackets | `[MERGE]` → merge when convenient. `[HOLD]` → read the comment, do the migration first. `[untriaged]` → wait for Monday or dispatch the triage manually. |
 | STALLED | Group PRs the fixer patched but CI never re-ran (the D3 gap), or red group PRs | Run `--nudge`. |
 | OTHER | Your own / anything else | Business as usual. |
+| ISSUES | Open issues labeled `posthog-error` / `ci-failure` / `incident` (see [issue conventions](#the-incident-lane-and-issue-conventions-since-2026-07-16)) | Decide, fix, or delegate — these are the cases the machines explicitly handed to you. |
+| HEALTH | Failed scheduled runs (last 7 days), workflows GitHub disabled (cron decay), open Dependabot security alerts | Investigate: repeated scheduled failures usually mean an expired `CLAUDE_CODE_OAUTH_TOKEN` or a turn cap; alerts without PRs are transitive-dep vulnerabilities. |
 
 Reading the `ci=` column: it aggregates **all** checks on the head commit,
 including Vercel preview deploys — `ci=fail` can mean "our CI is green but
