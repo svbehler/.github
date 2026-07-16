@@ -178,8 +178,9 @@ done
 
 # ---- HEALTH: the automation watching itself ------------------------------
 # Catches silent decay: scheduled runs failing (expired OAuth token, turn
-# caps), workflows GitHub disabled after 60 dormant days, and Dependabot
-# security alerts that never become PRs (transitive deps).
+# caps), workflows GitHub disabled after 60 dormant days, Dependabot
+# security alerts that never become PRs (transitive deps), and the shared
+# Actions minutes pool approaching exhaustion (warns at 75%).
 
 since=$(date -u -d '7 days ago' +%Y-%m-%d)
 # One line per finding: repo TAB detail
@@ -207,6 +208,30 @@ for repo in "${REPOS[@]}"; do
   [ -n "$alerts" ] && health_rows+="$repo	open security alerts: $alerts
 "
 done
+
+# Account-level: the Actions minutes pool all private repos share. Reading
+# it needs the `user` scope on the gh token (gh auth refresh -s user). The
+# included allowance is plan-dependent: Pro = $24/month of Actions usage
+# (~3000 Linux minutes); override via ACTIONS_INCLUDED_USD if the plan
+# changes. When the pool is exhausted and no payment method is on file,
+# Actions stop on ALL private repos - fixers, auto-merge, deploy watch.
+ACTIONS_INCLUDED_USD=${ACTIONS_INCLUDED_USD:-24}
+actions_usd=$(gh api \
+  "users/$OWNER/settings/billing/usage?year=$(date -u +%Y)&month=$(date -u +%-m)" \
+  --jq '[.usageItems[] | select(.product == "actions") | .grossAmount] | add // 0' \
+  2>/dev/null) || actions_usd=""
+if [ -n "$actions_usd" ]; then
+  usage_line=$(awk -v u="$actions_usd" -v i="$ACTIONS_INCLUDED_USD" 'BEGIN {
+    pct = (i > 0) ? int(u / i * 100) : 0
+    if (pct >= 75)
+      printf "Actions usage at %d%% of included $%s ($%.2f gross this cycle) - Actions stop on all private repos when the pool runs out", pct, i, u
+  }')
+  [ -n "$usage_line" ] && health_rows+="account	$usage_line
+"
+else
+  health_rows+="account	Actions usage unreadable (gh token needs the user scope: gh auth refresh -s user)
+"
+fi
 
 # ---- Render: HTML (email-safe: inline styles, tables) --------------------
 

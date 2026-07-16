@@ -201,10 +201,21 @@ the axe WCAG accessibility gates) as an `e2e` CI job:
 
 | Repo | Since | Status |
 | --- | --- | --- |
-| xpo-inventory | 2026-07-15 | **Blocking** |
-| xpo-market | 2026-07-15 | **Blocking** |
-| targical | 2026-07-16 | Non-blocking observation (`continue-on-error`); never gates the deploy jobs |
-| certaince | 2026-07-16 | Non-blocking observation (`continue-on-error`) |
+| xpo-inventory | 2026-07-15 | **Blocking**, PR-only |
+| xpo-market | 2026-07-15 | **Blocking**, PR-only |
+| targical | 2026-07-16 | Non-blocking observation (`continue-on-error`), PR-only; never gates the deploy jobs |
+| certaince | 2026-07-16 | Non-blocking observation (`continue-on-error`), PR-only |
+
+**PR-only since 2026-07-16 (Actions-minutes budget):** the e2e jobs carry
+`if: github.event_name == 'pull_request'`, so pushes to main run only the
+cheap checks job. Coverage holds because the push policy routes every
+change through a PR — what's lost is an e2e pass on the exact merged
+state of main (small on solo repos where main rarely moves under an open
+PR) and on the direct-to-main exception tier (docs/config). All private
+repos share one included-usage pool (GitHub Pro: $24 ≈ 3,000 Linux
+min/month; e2e is the biggest per-run consumer at ~4–15 min). Exhausting
+the pool with no payment method stops Actions on ALL private repos —
+`pr-queue.sh` warns in HEALTH at 75%.
 
 **The gate-introduction pattern** (also used by the fallow lane): a new CI
 gate enters **non-blocking** — `continue-on-error: true`, so a red run
@@ -282,6 +293,12 @@ for fixer pushes, or letting the fixer close/reopen as its final step.
 - **Cost:** all Claude runs use `claude_code_oauth_token` (subscription via
   `claude setup-token`) — no API billing. A fixer run is roughly $2 of
   API-equivalent usage drawn from the Max subscription.
+- **Actions minutes:** all repos are private, so every job draws from one
+  included-usage pool (GitHub Pro since 2026-07-16: $24 ≈ 3,000 Linux
+  min/month; July burned ~$15.57 in 16 days before the e2e PR-only trim).
+  `pr-queue.sh` HEALTH warns at 75% (needs the `user` scope on the gh
+  token). No payment method is on file — an exhausted pool stops Actions
+  account-wide until the cycle resets.
 - The Claude GitHub App has no `workflows: write` — a fixer can never modify
   workflow files. Fixers never merge, rebase, or force-push.
 - Routing is by **branch prefix** (`dependabot/*`, `claude/*`), never by
@@ -347,7 +364,7 @@ the automation-filed issues and a health sweep:
 | STALLED | Group PRs the fixer patched but CI never re-ran (the D3 gap), or red group PRs | Run `--nudge`. |
 | OTHER | Your own / anything else | Business as usual. |
 | ISSUES | Open issues labeled `posthog-error` / `ci-failure` / `incident` (see [issue conventions](#the-incident-lane-and-issue-conventions-since-2026-07-16)) | Decide, fix, or delegate — these are the cases the machines explicitly handed to you. |
-| HEALTH | Failed scheduled runs (last 7 days), workflows GitHub disabled (cron decay), open Dependabot security alerts | Investigate: repeated scheduled failures usually mean an expired `CLAUDE_CODE_OAUTH_TOKEN` or a turn cap; alerts without PRs are transitive-dep vulnerabilities. |
+| HEALTH | Failed scheduled runs (last 7 days), workflows GitHub disabled (cron decay), open Dependabot security alerts, Actions minutes pool ≥75% | Investigate: repeated scheduled failures usually mean an expired `CLAUDE_CODE_OAUTH_TOKEN` or a turn cap; alerts without PRs are transitive-dep vulnerabilities; a pool warning means add/raise the spending limit or trim triggers before Actions stop account-wide. |
 
 Reading the `ci=` column: it aggregates **all** checks on the head commit,
 including Vercel preview deploys — `ci=fail` can mean "our CI is green but
