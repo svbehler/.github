@@ -182,6 +182,40 @@ a `.fallowrc.json`. False positives are handled with
 `fallow fix --yes` into CI — fix authority stays with the Claude fixer,
 which judges a finding before deleting anything.
 
+## The E2E lane (full Playwright suites in CI)
+
+The four active product repos run their full Playwright suite (including
+the axe WCAG accessibility gates) as an `e2e` CI job:
+
+| Repo | Since | Status |
+| --- | --- | --- |
+| xpo-inventory | 2026-07-15 | **Blocking** |
+| xpo-market | 2026-07-15 | **Blocking** |
+| targical | 2026-07-16 | Non-blocking observation (`continue-on-error`); never gates the deploy jobs |
+| certaince | 2026-07-16 | Non-blocking observation (`continue-on-error`) |
+
+**The gate-introduction pattern** (also used by the fallow lane): a new CI
+gate enters **non-blocking** — `continue-on-error: true`, so a red run
+never fails the workflow, never blocks auto-merge, and never wakes the
+fixers — and **earns promotion with a stretch of clean runs** (a week or
+two). Promote by dropping `continue-on-error`; optionally add the job to
+the deploy jobs' `needs` where deploys run in CI (targical, ~15 min added
+deploy latency). The trade-off to remember: while non-blocking, a failure
+is silent — visible only by opening the run — so the observation window
+should be short and deliberate, not a permanent state.
+
+The observation period exists because CI surfaces environments local runs
+never hit: targical's first run found 3 real findings (CI's unscored-seed
+dashboard state rendered placeholder UI), fixed the same day.
+
+Repo mechanics worth knowing: certaince pre-builds `.next` with the
+Playwright webServer's env (`NEXT_PUBLIC_*` values are inlined into client
+bundles at build time) so the webServer takes its fast `pnpm start` path
+instead of building under its 180s timeout, and reuses the checks job's
+`local-dev-postgres` container recipe for the test database. targical
+warms the turbo cache for the same reason. xpo-inventory runs `test:unit`
+in the checks job and the Playwright suite only in `e2e`.
+
 ## The incident lane and issue conventions (since 2026-07-16)
 
 One principle aligns all lanes: **every failure terminates in a human
