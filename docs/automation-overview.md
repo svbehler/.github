@@ -251,6 +251,37 @@ for fixer pushes, or letting the fixer close/reopen as its final step.
   fixer jobs provision pnpm + Node and run `pnpm install` **before** Claude
   starts — a bare runner burns the whole budget on missing tools.
 
+## Push policy: PR-first (since 2026-07-16)
+
+Convention, not enforcement — the free plan has no branch protection on
+private repos, so this lives in documentation (here and in the global
+CLAUDE.md) rather than in rulesets. Written down because the whole layer
+works better when changes flow through PRs.
+
+**Default: PR-first.** Work happens on a task branch; push the branch, open
+a PR, merge on green CI, then update local `main` from origin.
+
+- On the active-product repos a `main` push deploys to production. The
+  fixer layer is reactive — by the time it wakes, prod already took the
+  hit. A PR runs the same CI *before* anything ships.
+- Every PR-based lane (fixers, major triage, auto-merge, `pr-queue.sh`, any
+  future review lane) is blind to direct pushes.
+- Pre-merge failures route through the better-behaved PR fixer;
+  main-failure fixers are the flakiest lane (see the duplicate-PR rough
+  edge).
+
+**Agent-authored changes are always PR-first, no exceptions.** Human review
+happens on the PR diff before merge.
+
+**Direct-to-main stays fine for:** docs/config changes CI barely exercises
+and that touch no deploy path; the low-stakes repos with no deploy coupling
+(dot-github, emily-kirby, bc-to-datev, tempo-website) after local checks;
+and emergency fixes when `main` is already broken.
+
+**Never push a `main` that carries unrelated unpushed WIP** — push the task
+branch and PR it instead, so one change can ship without dragging the
+others into production.
+
 ## Operating it
 
 Day-to-day there is exactly one command:
