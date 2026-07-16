@@ -52,7 +52,12 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           plugin_marketplaces: "https://github.com/anthropics/claude-code.git"
           plugins: "code-review@claude-code-plugins"
-          prompt: "/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number || github.event.issue.number }}"
+          # --comment is load-bearing: without it the plugin reviews but
+          # never posts (step 7 of its command: "If --comment was NOT
+          # provided, stop here. Do not post any GitHub comments.").
+          # With it, findings become inline comments; a clean review posts
+          # a summary comment.
+          prompt: "/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number || github.event.issue.number }} --comment"
           # No --allowedTools: the plugin declares its own tool allowlist and
           # its subagent fan-out breaks under a hand-built prefix list
           # (verified live: 8 permission denials, review produced nothing).
