@@ -81,6 +81,18 @@ This flow was validated end-to-end live on xpo-inventory PR #25: a
 47-package group bump broke CI twice (Stripe API version + prettier 3.9
 style drift), the fixer repaired both, and auto-merge landed it.
 
+## Agent task PRs (since 2026-07-16)
+
+Agent-authored work now arrives PR-first: an agent ships a finished task
+branch with `agent-ship-pr.sh` (agents-config repo, not this one), which
+pushes the branch and opens an ordinary feature PR, then stops for human
+review. These PRs get the full treatment — CI runs, the fixer lanes apply
+— and land in the same `pr-queue.sh` review queue as everything else.
+Nothing auto-merges them (auto-merge stays Dependabot-only); merging is the
+one human step. Once you merge in GitHub, local cleanup is automatic —
+`agent-finish-pr.sh` (and its `--sweep` at the next task start in that repo)
+syncs local `main` and deletes the worktree plus local and remote branches.
+
 ## The PostHog error lane (production errors, 4 repos)
 
 Production runtime errors get the same treatment as CI failures on the
