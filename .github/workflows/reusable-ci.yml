@@ -57,6 +57,11 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: ${{ inputs.node-version }}
+          # setup-node v5 auto-enables caching for the package manager named
+          # in package.json's packageManager field; this job never installs
+          # pnpm, so the auto-cache's `pnpm store path` probe fails the step
+          # ("Unable to locate executable file: pnpm", bc-to-datev #3).
+          package-manager-cache: false
       # Static analysis only — no pnpm install needed (verified 2026-07-16
       # on a bare clone). Pinned to the 2.x major; bump deliberately.
       - run: npx --yes fallow@2 audit --base "origin/$GITHUB_BASE_REF"
