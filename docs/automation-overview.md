@@ -34,7 +34,7 @@ Each active repo has these files under `.github/`:
 
 | File | What it does |
 | --- | --- |
-| `workflows/ci.yml` | The CI workflow. Repos without their own CI call the shared `reusable-ci.yml` from this repo (pnpm install → lint → typecheck → test → check → build, each `--if-present`). Repos with pre-existing CI (xpo-inventory, xpo-market, certaince, targical) kept theirs, extended with a `pull_request` trigger, a build step, and concurrency. **The workflow name `CI` is load-bearing** — everything below listens for it by name. |
+| `workflows/ci.yml` | The CI workflow. Repos without their own CI call the shared `reusable-ci.yml` from this repo (pnpm install → lint → typecheck → test → check → build, each `--if-present`, plus the PR-only fallow audit lane below). Repos with pre-existing CI (xpo-inventory, xpo-market, certaince, targical) kept theirs, extended with a `pull_request` trigger, a build step, and concurrency. **The workflow name `CI` is load-bearing** — everything below listens for it by name. |
 | `dependabot.yml` | npm + github-actions updates. Cadence differs by repo: **weekly (Monday)** on the active products (xpo-inventory, xpo-market, certaince, targical), **monthly** on the low-churn repos (emily-kirby, bc-to-datev, tempo-website) to keep noise down. Minor+patch bumps are **grouped into one PR** named `minor-and-patch` — that group name is also load-bearing. Majors arrive as individual PRs. |
 | `workflows/dependabot-auto-merge.yml` | When a CI `workflow_run` succeeds on a branch containing `minor-and-patch`, squash-merges the PR. This replaces GitHub's native auto-merge and branch rulesets, which the free plan doesn't offer on private repos. |
 | `workflows/fix-dependabot.yml` | Claude fixer for Dependabot PRs that break CI. Adapts the code to the new dependency version (type changes, renamed APIs, config migrations), verifies against the repo's actual CI checks, commits `auto-fix:` to the PR branch, and comments. If the bump needs a real migration decision, it comments an outline instead of committing. |
@@ -140,6 +140,43 @@ actually enabled in the app. One shared PAT covers all four repos;
 regenerating it invalidates the old value immediately — re-PATCH all
 four PostHog destinations (a PATCH must resend the full `inputs`
 object). Detailed runbook: `targical/docs/posthog-error-automation.md`.
+
+## The fallow audit lane (changeset-scoped code health, since 2026-07-16)
+
+Every PR gets a `fallow` CI job that runs
+`npx fallow@2 audit --base origin/<base>`: dead code, complexity, and
+duplication **introduced by the PR's changed files**. Fallow's attribution
+gate is "new-only" — pre-existing (inherited) issues never fail the
+verdict, so no repo needed a cleanup before turning it on. The job is
+cheap: checkout with `fetch-depth: 0` (the merge-base must be present) +
+Node + `npx` — fallow is static analysis and needs no `pnpm install`
+(verified on a bare clone, ~300 ms).
+
+Where it lives:
+
+- `reusable-ci.yml` — all repos on the shared CI get it automatically;
+  a repo can opt out with `run-fallow: false` in its caller.
+- xpo-inventory and xpo-market carry their own copy of the job in their
+  custom `ci.yml` (added 2026-07-16).
+- certaince and targical (the other custom-CI repos) do **not** have the
+  lane yet — copy the job from xpo-inventory's `ci.yml` when wiring them.
+
+**It is currently non-blocking** (`continue-on-error: true`): a red
+verdict shows on the PR but the workflow run still concludes `success`,
+so it neither blocks auto-merge nor wakes the fixers. This is a
+deliberate observation period — static dead-code analysis has a known
+false-positive class (dynamic imports, framework-invoked members), and a
+false positive in a blocking job would stall the Dependabot/fixer lanes
+and invite the fixer to "fix" live code.
+
+Promotion plan, once a few weeks of real PRs show acceptable precision:
+drop `continue-on-error` so error-severity findings (dead code) gate the
+PR; keep complexity and duplication report-only via `rules` severities in
+a `.fallowrc.json`. False positives are handled with
+`// fallow-ignore-next-line` comments or config (`dynamicallyLoaded`,
+`usedClassMembers`), not by widening thresholds. Do **not** wire
+`fallow fix --yes` into CI — fix authority stays with the Claude fixer,
+which judges a finding before deleting anything.
 
 ## The known gap: fixer commits don't retrigger CI (decision D3)
 

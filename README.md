@@ -8,7 +8,7 @@ Background: the "Automated CI/CD failure fixing" proposal (2026-07).
 
 | Path | Purpose |
 | --- | --- |
-| `.github/workflows/reusable-ci.yml` | CI definition for repos that have none: pnpm install → lint → typecheck → test → check → build (each `--if-present`). Repos with their own `ci.yml` keep it — the fixers only require a workflow named `CI`. |
+| `.github/workflows/reusable-ci.yml` | CI definition for repos that have none: pnpm install → lint → typecheck → test → check → build (each `--if-present`), plus a PR-only, non-blocking changeset-scoped `fallow audit` lane (opt out with `run-fallow: false`). Repos with their own `ci.yml` keep it — the fixers only require a workflow named `CI`. |
 | `templates/ci.yml` | Per-repo caller for repos without existing CI. The workflow name `CI` is load-bearing — both fixers trigger on it. Existing CI must add a `pull_request` trigger and a build step. |
 | `templates/dependabot.yml` | Weekly, minor+patch grouped into one PR; also tracks GitHub Actions versions. |
 | `templates/dependabot-auto-merge.yml` | Merges Dependabot minor+patch group PRs after a green CI run (majors are individual PRs and never auto-merged). |
