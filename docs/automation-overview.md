@@ -40,6 +40,7 @@ Each active repo has these files under `.github/`:
 | `workflows/fix-dependabot.yml` | Claude fixer for Dependabot PRs that break CI. Adapts the code to the new dependency version (type changes, renamed APIs, config migrations), verifies against the repo's actual CI checks, commits `auto-fix:` to the PR branch, and comments. If the bump needs a real migration decision, it comments an outline instead of committing. |
 | `workflows/auto-fix-ci.yml` | Claude fixer for everything else that breaks CI (pushes to main, feature PRs). Commits to the PR branch, or — for failures on main — opens a `claude/ci-fix-<runid>` PR. Skips `dependabot/*` and `claude/*` branches. When a failure needs a human (secrets, infrastructure, ambiguous behavior) and there is no PR to comment on, it files an issue labeled `ci-failure` instead. On targical, failures confined to the deploy/smoke jobs bypass the fixer entirely and become an `incident` issue (see the incident lane below). |
 | `workflows/dependabot-major-triage.yml` | Weekly (Mon 07:00 UTC) + manual dispatch. A free gate job lists open major PRs and skips Claude entirely when there are none. Otherwise Claude reads changelogs, greps the repo for affected usage, and comments a `**Verdict: MERGE**` or `**Verdict: HOLD**` (marked `<!-- major-triage -->`) on each untriaged major. Read-only: never touches code, never merges. |
+| `workflows/pr-review.yml` | Advisory Claude code review, once per PR (see [the review lane](#the-review-lane-advisory-code-review-since-2026-07-16)). Runs the official code-review plugin on PR open (and on demand via an `@claude review` comment), posts findings as review comments. Read-only: never commits, never blocks a merge. Skips `dependabot/*` (those have the triage + auto-merge lanes). |
 
 In this repo additionally:
 
@@ -92,6 +93,39 @@ Nothing auto-merges them (auto-merge stays Dependabot-only); merging is the
 one human step. Once you merge in GitHub, local cleanup is automatic —
 `agent-finish-pr.sh` (and its `--sweep` at the next task start in that repo)
 syncs local `main` and deletes the worktree plus local and remote branches.
+
+## The review lane (advisory code review, since 2026-07-16)
+
+Every non-Dependabot PR gets one automated Claude code review when it
+opens — the CodeRabbit role, run on the subscription token like the other
+lanes. `workflows/pr-review.yml` invokes the official **code-review
+plugin** (the same engine as the local `/code-review` skill) via
+`claude-code-action@v1`, which reviews the PR diff for correctness bugs
+and posts findings as review comments on the PR.
+
+Triggers and routing:
+
+- `pull_request: opened` — exactly one review per PR, **not** on every
+  push (subscription usage; a busy PR would burn quota repeatedly).
+  Re-request after changes with a PR comment containing `@claude review`
+  (human comments only — bot comments are ignored, so the lane cannot
+  retrigger itself).
+- Skips `dependabot/*` branches: grouped minors auto-merge on green CI
+  and majors get the MERGE/HOLD triage — a review comment there is noise.
+- Fork PRs are skipped (same policy as the fixers).
+- `claude/*` fixer PRs and agent task PRs **are** reviewed — that is the
+  independent-review step for agent-authored code, pre-chewed before the
+  human looks at the diff.
+
+Advisory by construction: it is a separate workflow from `CI`, so a
+review — whatever it finds — never fails a check, never blocks
+auto-merge, and never wakes the fixers. It follows the same
+gate-introduction pattern as the fallow and E2E lanes: observe precision
+first; if the findings prove reliable and a blocking gate ever seems
+worth it, that would be a deliberate later promotion.
+
+Read-only by prompt and by allowlist, like the triage lane: no
+Edit/Write, no commits, no merges — comments are the only output.
 
 ## The PostHog error lane (production errors, 4 repos)
 
@@ -310,7 +344,8 @@ for fixer pushes, or letting the fixer close/reopen as its final step.
   trusted base ref stays at the workspace root).
 - The triage workflow is read-only by prompt and by allowlist (no
   Edit/Write, `gh`/`npm view`/read-only shell commands).
-- Turn caps: 40 (general fixer), 60 (Dependabot fixer), 30 (triage). The
+- Turn caps: 40 (general fixer), 60 (Dependabot fixer), 30 (triage), 30
+  (review). The
   fixer jobs provision pnpm + Node and run `pnpm install` **before** Claude
   starts — a bare runner burns the whole budget on missing tools.
 
@@ -327,8 +362,8 @@ a PR, merge on green CI, then update local `main` from origin.
 - On the active-product repos a `main` push deploys to production. The
   fixer layer is reactive — by the time it wakes, prod already took the
   hit. A PR runs the same CI *before* anything ships.
-- Every PR-based lane (fixers, major triage, auto-merge, `pr-queue.sh`, any
-  future review lane) is blind to direct pushes.
+- Every PR-based lane (fixers, major triage, auto-merge, `pr-queue.sh`, the
+  review lane) is blind to direct pushes.
 - Pre-merge failures route through the better-behaved PR fixer;
   main-failure fixers are the flakiest lane (see the duplicate-PR rough
   edge).
