@@ -354,8 +354,13 @@ bash ~/projects/dot-github/scripts/pr-queue.sh          # what needs me?
 bash ~/projects/dot-github/scripts/pr-queue.sh --nudge  # unstick stalled group PRs
 ```
 
-It lists open PRs across all 7 active repos in four buckets, followed by
-the automation-filed issues and a health sweep:
+It opens with a **suggested review order** — every actionable PR in one
+numbered list, sequenced to minimize wasted CI cycles (nudges first so
+reruns happen while you review, then green fixers guarding main, then
+`ci:`-prefixed automation-config PRs since they change the gates, then
+one-click majors and your own green PRs, with red fixers and HOLD
+migrations last). Then the open PRs across all 7 active repos in four
+buckets, followed by the automation-filed issues and a health sweep:
 
 | Section | Meaning | What you do |
 | --- | --- | --- |

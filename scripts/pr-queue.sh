@@ -12,6 +12,12 @@
 #            (decision D3), so these need a close/reopen nudge
 #   OTHER    everything else (your own feature PRs etc.)
 #
+# Above the buckets it prints a SUGGESTED REVIEW ORDER - every actionable
+# PR as one numbered list, sequenced to minimize wasted CI cycles: nudges
+# first (reruns happen while you review), green fixer PRs (guard main),
+# automation-config PRs (ci:-prefixed - they change the gates), MERGE
+# majors, your own green PRs, then red fixers and HOLD majors.
+#
 # Below the PR buckets it also prints:
 #
 #   ISSUES   open issues the automation filed for a human - labels
@@ -233,6 +239,73 @@ else
 "
 fi
 
+# ---- Actions and suggested review order ----------------------------------
+# Each open PR maps to exactly one thing the human does with it this
+# Monday (the HTML report is organized by ACTION, not by PR taxonomy).
+action_of() {
+  # category ci verdict -> action group
+  case "$1" in
+    FIX) if [ "$2" = pass ]; then echo REVIEW; else echo INVESTIGATE; fi ;;
+    STALLED) echo NUDGE ;;
+    MAJOR)
+      case "$3" in
+        MERGE) if [ "$2" = pass ]; then echo MERGE; else echo WAIT; fi ;;
+        HOLD) echo PLAN ;;
+        *) echo WAIT ;;
+      esac
+      ;;
+    # Your own (or an agent session's) PRs: green ones need YOUR merge -
+    # nothing automated touches them - so they are an action, not a WAIT.
+    *) if [ "$2" = pass ]; then echo SHIP; else echo WAIT; fi ;;
+  esac
+}
+
+# The order minimizes wasted wall-clock and CI churn:
+#   1 nudges first        close/reopen is seconds; the reruns happen while
+#                         you review everything else
+#   2 green fixer PRs     they repair/guard main and unblock dependents
+#   3 automation config   ci:-prefixed green PRs change the gates - merge
+#                         before anything whose next run should use them
+#   4 MERGE majors        one click each, batch through them
+#   5 your other green PRs
+#   6 red fixer PRs       need an actual decision - do when focused
+#   7 HOLD majors         migration planning, not a Monday click
+rank_of() {
+  # action title -> rank
+  case "$1" in
+    NUDGE) echo 1 ;;
+    REVIEW) echo 2 ;;
+    SHIP) case "$2" in ci:* | "ci("*) echo 3 ;; *) echo 5 ;; esac ;;
+    MERGE) echo 4 ;;
+    INVESTIGATE) echo 6 ;;
+    PLAN) echo 7 ;;
+    *) echo 9 ;;
+  esac
+}
+
+reason_of() {
+  case "$1" in
+    1) echo "nudge (close/reopen) - CI reruns while you review the rest" ;;
+    2) echo "green fixer PR - repairs/guards main, unblocks dependents" ;;
+    3) echo "automation config - changes the gates for every later run" ;;
+    4) echo "triage MERGE + green CI - one click each" ;;
+    5) echo "your PR, CI green - review and merge" ;;
+    6) echo "red fixer PR - needs your decision" ;;
+    7) echo "HOLD major - read the triage comment, plan the migration" ;;
+  esac
+}
+
+# ordered: rank TAB repo TAB number TAB title, sorted by rank, repo, number.
+ordered=""
+while IFS=$'\t' read -r o_repo o_number o_cat o_ci o_verdict o_branch o_title; do
+  [ -z "$o_repo" ] && continue
+  o_act=$(action_of "$o_cat" "$o_ci" "$o_verdict")
+  [ "$o_act" = WAIT ] && continue
+  ordered+="$(rank_of "$o_act" "$o_title")	$o_repo	$o_number	$o_title
+"
+done <<<"$rows"
+[ -n "$ordered" ] && ordered=$(printf '%s' "$ordered" | sort -t"$(printf '\t')" -k1,1n -k2,2 -k3,3n)
+
 # ---- Render: HTML (email-safe: inline styles, tables) --------------------
 
 if [ "$HTML" = 1 ]; then
@@ -246,24 +319,6 @@ if [ "$HTML" = 1 ]; then
       fail) echo "#cf222e" ;;
       pending) echo "#9a6700" ;;
       *) echo "#57606a" ;;
-    esac
-  }
-
-  # The HTML report is organized by ACTION, not by PR taxonomy: each open
-  # PR maps to exactly one thing the human does with it this Monday.
-  action_of() {
-    # category ci verdict -> action group
-    case "$1" in
-      FIX) if [ "$2" = pass ]; then echo REVIEW; else echo INVESTIGATE; fi ;;
-      STALLED) echo NUDGE ;;
-      MAJOR)
-        case "$3" in
-          MERGE) if [ "$2" = pass ]; then echo MERGE; else echo WAIT; fi ;;
-          HOLD) echo PLAN ;;
-          *) echo WAIT ;;
-        esac
-        ;;
-      *) echo WAIT ;;
     esac
   }
 
@@ -301,7 +356,7 @@ if [ "$HTML" = 1 ]; then
     printf '</table>\n'
   }
 
-  n_merge=0; n_review=0; n_invest=0; n_nudge=0; n_plan=0; n_wait=0
+  n_merge=0; n_review=0; n_invest=0; n_nudge=0; n_plan=0; n_ship=0; n_wait=0
   while IFS=$'\t' read -r r_repo r_number r_cat r_ci r_verdict r_branch r_title; do
     [ -z "$r_repo" ] && continue
     case "$(action_of "$r_cat" "$r_ci" "$r_verdict")" in
@@ -310,12 +365,13 @@ if [ "$HTML" = 1 ]; then
       INVESTIGATE) n_invest=$((n_invest + 1)) ;;
       NUDGE) n_nudge=$((n_nudge + 1)) ;;
       PLAN) n_plan=$((n_plan + 1)) ;;
+      SHIP) n_ship=$((n_ship + 1)) ;;
       WAIT) n_wait=$((n_wait + 1)) ;;
     esac
   done <<<"$rows"
   n_issues=$(printf '%s' "$issue_rows" | grep -c . || true)
   n_health=$(printf '%s' "$health_rows" | grep -c . || true)
-  n_actions=$((n_merge + n_review + n_invest + n_nudge + n_plan + n_issues))
+  n_actions=$((n_merge + n_review + n_invest + n_nudge + n_plan + n_ship + n_issues))
 
   printf '<div style="font-family:-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,Roboto,Helvetica,Arial,sans-serif;max-width:760px;margin:0 auto;padding:8px 12px;color:#1f2328;background:#ffffff;">\n'
   printf '<h1 style="font-size:19px;margin:10px 0 2px;">Automation review queue</h1>\n'
@@ -330,6 +386,7 @@ if [ "$HTML" = 1 ]; then
     todo "$n_review" "<b>Review $n_review green fixer PR$(pl "$n_review")</b> - the fix worked; check the diff, then merge."
     todo "$n_invest" "<b>Investigate $n_invest red fixer PR$(pl "$n_invest")</b> - the fix itself is failing CI; these need a decision."
     todo "$n_nudge" "<b>Nudge $n_nudge stalled group PR$(pl "$n_nudge")</b> - run <b>pr-queue.sh --nudge</b> once, then they self-merge on green."
+    todo "$n_ship" "<b>Merge $n_ship of your own green PR$(pl "$n_ship")</b> - nothing automated touches these; they wait on you."
     todo "$n_plan" "<b>Plan $n_plan HOLD migration$(pl "$n_plan")</b> - read the triage comment, schedule the migration work."
     todo "$n_issues" "<b>Decide $n_issues automation issue$(pl "$n_issues")</b> - production errors or failures the machines could not handle alone."
     printf '</ol>\n'
@@ -338,8 +395,26 @@ if [ "$HTML" = 1 ]; then
     printf '<p style="margin:0 0 6px;font-size:12px;color:#57606a;">%s more PRs are waiting on automation (red or pending CI, untriaged majors) - no action, listed at the bottom.</p>\n' "$n_wait"
   fi
 
+  if [ -n "$ordered" ]; then
+    printf '<h2 style="font-size:15px;margin:20px 0 2px;color:#1f2328;">In this order</h2>\n'
+    printf '<p style="margin:0 0 8px;color:#57606a;font-size:12px;">Nudges first (their CI reruns while you review), then fixers guarding main, then automation-config PRs (they change the gates), then one-click majors and your own PRs; red fixers and HOLD migrations last. After merging into a repo, its remaining PRs may need a re-run to go green (the D3 gap).</p>\n'
+    printf '<ol style="margin:4px 0 6px 22px;padding:0;font-size:13px;">\n'
+    prev_rank=""
+    while IFS=$'\t' read -r rank repo number title; do
+      [ -z "$rank" ] && continue
+      if [ "$rank" != "$prev_rank" ]; then
+        printf '<li style="list-style:none;margin:8px 0 2px -22px;color:#57606a;font-size:12px;">%s</li>\n' "$(esc "$(reason_of "$rank")")"
+        prev_rank="$rank"
+      fi
+      printf '<li style="margin:3px 0;">%s <a href="https://github.com/%s/%s/pull/%s" style="color:#0969da;text-decoration:none;">#%s</a> %s</li>\n' \
+        "$(esc "$repo")" "$OWNER" "$repo" "$number" "$number" "$(esc "$title")"
+    done <<<"$ordered"
+    printf '</ol>\n'
+  fi
+
   html_group MERGE "Merge now" "Triage verdict MERGE with green CI. Merging is safe and unblocks Dependabot." "$n_merge"
   html_group REVIEW "Review and merge - green fixer PRs" "The fixer repaired CI and its checks pass. Review the diff, then merge or close." "$n_review"
+  html_group SHIP "Your own green PRs" "Authored by you or an agent session, CI green. Nothing automated merges these - review and merge when ready." "$n_ship"
   html_group INVESTIGATE "Investigate - red fixer PRs" "The fixer committed but CI is still failing (or never re-ran). Open the PR and decide: fix, close, or nudge." "$n_invest"
   html_group NUDGE "Nudge - stalled group PRs" "The fixer patched these but bot commits do not retrigger CI. pr-queue.sh --nudge close/reopens them; on green they auto-merge." "$n_nudge"
   html_group PLAN "Plan - HOLD migrations" "The weekly triage found breaking changes that touch this code. Read its PR comment; schedule the migration before merging." "$n_plan"
@@ -382,6 +457,21 @@ if [ -z "$rows" ]; then
   echo "No open PRs."
   echo
 else
+  if [ -n "$ordered" ]; then
+    echo "== Suggested review order =="
+    i=0
+    prev_rank=""
+    while IFS=$'\t' read -r rank repo number title; do
+      [ -z "$rank" ] && continue
+      if [ "$rank" != "$prev_rank" ]; then
+        printf '  -- %s\n' "$(reason_of "$rank")"
+        prev_rank="$rank"
+      fi
+      i=$((i + 1))
+      printf '  %2d. %-19s #%-5s %s\n' "$i" "$repo" "$number" "$title"
+    done <<<"$ordered"
+    echo
+  fi
   print_section FIX     "Fixer PRs (claude/*) - review and merge/close"
   print_section MAJOR   "Dependabot majors - your call (weekly triage verdict in brackets)"
   print_section STALLED "Stalled group PRs - run with --nudge to retrigger CI"
