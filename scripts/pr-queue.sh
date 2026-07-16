@@ -285,13 +285,13 @@ rank_of() {
 
 reason_of() {
   case "$1" in
-    1) echo "nudge (close/reopen) - CI reruns while you review the rest" ;;
-    2) echo "green fixer PR - repairs/guards main, unblocks dependents" ;;
-    3) echo "automation config - changes the gates for every later run" ;;
-    4) echo "triage MERGE + green CI - one click each" ;;
-    5) echo "your PR, CI green - review and merge" ;;
-    6) echo "red fixer PR - needs your decision" ;;
-    7) echo "HOLD major - read the triage comment, plan the migration" ;;
+    1) echo "Restart CI on these first (run pr-queue.sh --nudge) - results arrive while you do the rest" ;;
+    2) echo "Green fixes - check the diff, then merge" ;;
+    3) echo "CI setup changes - merge early so everything after runs with them" ;;
+    4) echo "Dependency updates already approved by triage - just merge" ;;
+    5) echo "Your own PRs - merge when you are happy with them" ;;
+    6) echo "Failing fixes - these need a closer look, not a click" ;;
+    7) echo "Big version bumps - read the triage comment and plan; nothing to merge today" ;;
   esac
 }
 
@@ -397,13 +397,14 @@ if [ "$HTML" = 1 ]; then
 
   if [ -n "$ordered" ]; then
     printf '<h2 style="font-size:15px;margin:20px 0 2px;color:#1f2328;">In this order</h2>\n'
-    printf '<p style="margin:0 0 8px;color:#57606a;font-size:12px;">Nudges first (their CI reruns while you review), then fixers guarding main, then automation-config PRs (they change the gates), then one-click majors and your own PRs; red fixers and HOLD migrations last. After merging into a repo, its remaining PRs may need a re-run to go green (the D3 gap).</p>\n'
-    printf '<ol style="margin:4px 0 6px 22px;padding:0;font-size:13px;">\n'
+    printf '<p style="margin:0 0 8px;color:#57606a;font-size:12px;">Work top to bottom. The order is chosen so you never sit waiting for CI.</p>\n'
     prev_rank=""
     while IFS=$'\t' read -r rank repo number title; do
       [ -z "$rank" ] && continue
       if [ "$rank" != "$prev_rank" ]; then
-        printf '<li style="list-style:none;margin:8px 0 2px -22px;color:#57606a;font-size:12px;">%s</li>\n' "$(esc "$(reason_of "$rank")")"
+        [ -n "$prev_rank" ] && printf '</ol>\n'
+        printf '<p style="margin:10px 0 2px;font-size:13px;"><b>%s</b></p>\n' "$(esc "$(reason_of "$rank")")"
+        printf '<ol style="margin:2px 0 6px 22px;padding:0;font-size:13px;">\n'
         prev_rank="$rank"
       fi
       printf '<li style="margin:3px 0;">%s <a href="https://github.com/%s/%s/pull/%s" style="color:#0969da;text-decoration:none;">#%s</a> %s</li>\n' \
