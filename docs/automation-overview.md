@@ -124,8 +124,13 @@ gate-introduction pattern as the fallow and E2E lanes: observe precision
 first; if the findings prove reliable and a blocking gate ever seems
 worth it, that would be a deliberate later promotion.
 
-Read-only by prompt and by allowlist, like the triage lane: no
-Edit/Write, no commits, no merges — comments are the only output.
+Read-only by prompt and by token permissions: the job runs with
+`contents: read`, so a push is structurally impossible, and
+`pull-requests: write` limits output to comments. Unlike the triage
+lane there is deliberately **no** `--allowedTools` list — the plugin
+declares its own tools and its subagent fan-out breaks under a
+hand-built prefix list (verified live on the pilot: 8 permission
+denials and an empty review).
 
 ## The PostHog error lane (production errors, 4 repos)
 
