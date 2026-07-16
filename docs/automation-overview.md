@@ -156,10 +156,14 @@ Where it lives:
 
 - `reusable-ci.yml` — all repos on the shared CI get it automatically;
   a repo can opt out with `run-fallow: false` in its caller.
-- xpo-inventory and xpo-market carry their own copy of the job in their
-  custom `ci.yml` (added 2026-07-16).
-- certaince and targical (the other custom-CI repos) do **not** have the
-  lane yet — copy the job from xpo-inventory's `ci.yml` when wiring them.
+- All four custom-CI repos carry their own copy of the job in their
+  `ci.yml` (xpo-inventory, xpo-market, certaince, targical — added
+  2026-07-16). On targical the job deliberately does not join the deploy
+  jobs' `needs`; on certaince a `.fallowrc.json` excludes the Payload
+  generated artifacts (`src/payload-types.ts`, `importMap.js`) — Payload
+  emits types for every collection whether or not app code consumes them,
+  so regenerating after a config change would otherwise flag "new" dead
+  types on legitimate PRs.
 
 **It is currently non-blocking** (`continue-on-error: true`): a red
 verdict shows on the PR but the workflow run still concludes `success`,
