@@ -142,8 +142,11 @@ is the platform-runtime class that only the staged deploy can catch.
 
 Fallow and PostHog error triage no longer run per-change — the pre-promote
 lane is ship-blockers only. Instead, a recurring local audit of `main` per
-product repo turns findings into ordinary task branches that re-enter the
-flow at Phase 1 and pass the same pre-merge gate as any other change:
+product repo — the **repo-audit skill**
+(`~/.agents/skills/repo-audit/SKILL.md`, run weekly; baselines and reports
+under `~/.local/state/agent-audits/<repo>/`) — turns findings into ordinary
+task branches that re-enter the flow at Phase 1 and pass the same pre-merge
+gate as any other change:
 
 1. **Sweep** — fallow repo-wide (deltas vs the last audit's baselines) + a
    PostHog error-tracking sweep via MCP (new/regressed issues over the last 7
