@@ -16,7 +16,7 @@ Background: the "Automated CI/CD failure fixing" proposal (2026-07).
 | `templates/fix-dependabot.yml` | Claude fixer for Dependabot PRs that break CI. Runs from `workflow_run` (base context) with the PR head in a subdirectory, per the action's security guide. |
 | `templates/dependabot-major-triage.yml` | Weekly (Mon 07:00 UTC) Claude triage of open Dependabot major PRs: comments a `MERGE`/`HOLD` verdict per PR. A free gate job skips Claude entirely when no majors are open. Read-only — never touches code. |
 | `scripts/rollout.sh` | Copies the templates into a repo, pushes, and (best effort) creates the main ruleset. |
-| `scripts/pr-queue.sh` | The human review queue: lists open PRs across all active repos, categorized (fixer PRs, untriaged/triaged majors, stalled group PRs, other), then automation-filed issues (`posthog-error` / `ci-failure` / `incident`) and a 7-day health sweep (failed scheduled runs, disabled workflows, open Dependabot security alerts). `--nudge` close/reopens stalled group PRs so CI re-runs and auto-merge can proceed. |
+| `scripts/pr-queue.sh` | Daily status board for the local-first process (2026-07-17): open PRs across the active repos (post-teardown: Dependabot security PRs and strays only), open Dependabot security alerts, and per product repo the pending-promote list (`git log production..main` — merged but not yet live). `--nudge`/`--html` are gone with the automation fleet. |
 
 ## Per-repo requirements
 
