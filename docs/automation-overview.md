@@ -1,11 +1,19 @@
-# CI/CD auto-fix setup — how it all works
+# CI/CD auto-fix setup — RETIRED (historical record)
 
-One-page explanation of the automation running across the TypeScript repos:
-what the moving parts are, how a dependency bump or a broken push flows
-through the system, what still needs a human, and how to operate it.
+> **This layer was torn down on 2026-07-17**, three days after rollout: it
+> burned through the shared GitHub Actions minutes pool and generated a flood
+> of notification emails. Nothing below is running anymore — all workflows,
+> Dependabot version updates, and PostHog webhook lanes were removed. The
+> current process is **[local-first-process.md](local-first-process.md)**:
+> local CI lanes, no PRs, and deliberate staged promotes to a `production`
+> branch. This file stays as the historical record of how the automation
+> worked and why each piece existed.
 
-Built 2026-07-14. Templates and scripts live in this repo (`svbehler/.github`);
-each active repo carries its own copy of the workflow files.
+One-page explanation of the automation that ran across the TypeScript repos:
+what the moving parts were, how a dependency bump or a broken push flowed
+through the system, what still needed a human, and how it was operated.
+
+Built 2026-07-14, retired 2026-07-17. Templates live in `historical/`.
 
 ## The one-paragraph version
 
