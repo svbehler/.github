@@ -17,8 +17,10 @@ everywhere in tooling and docs: **pre-merge** (guards `main`) and
 
 ```
 Phase 1 TASK        worktree ──▶ implement ──▶ commit
-Phase 2 PRE-MERGE   local-ci pre-merge lane ──▶ /code-review + fallow audit
-                    ──▶ human diff review + approval
+Phase 2 PRE-MERGE   finish-task skill: local-ci pre-merge lane
+                    ──▶ fallow audit (+ auto-apply safe class, own commit)
+                    ──▶ /code-review incl. the fallow commit (+ fix commit)
+                    ──▶ human diff review + approval (4-bucket summary)
                     ──▶ agent-merge-main.sh (--no-ff merge, pushes main)
                                                               [ships nothing]
                      ⋮  tasks accumulate on main
@@ -48,11 +50,18 @@ Phase 4 SHIP        Vercel:   vercel deploy --prod --skip-domain (staged, live
 
 ### Phase 2 — the pre-merge gate (every merge into `main`)
 
+The whole phase is orchestrated by the **finish-task skill**
+(`~/.agents/skills/finish-task/SKILL.md`) — run it on every finished task
+branch. Its steps:
+
 | Step | What |
 | --- | --- |
-| pre-merge lane | `local-ci.sh` (currently named "fast lane" in the script): frozen install, lint, typecheck, unit tests, `prettier --check`, warm build — gates a repo doesn't define are listed loudly, never skipped silently. Run by `agent-merge-main.sh`; `SKIP_LOCAL_CI=1` for docs/config tier (recorded as a git note on the merge commit). |
-| automated review | `/code-review` on the task diff + changeset-scoped `fallow audit` (delta vs `main` only). Safe findings are auto-applied as their own commits; the rest are flagged. *(Skill in progress — until it lands, run `/code-review` manually.)* |
-| human approval | diff review of the task branch (including any auto-applied commits) + explicit go-ahead before `agent-merge-main.sh`. |
+| pre-merge lane | `local-ci.sh` (default lane): frozen install, lint, typecheck, unit tests, `prettier --check`, warm build — gates a repo doesn't define are listed loudly, never skipped silently. Also rerun by `agent-merge-main.sh` at merge time; `SKIP_LOCAL_CI=1` for docs/config tier (recorded as a git note on the merge commit). |
+| fallow audit | two scopes: `fallow audit --base main --max-crap 100` (new dead code / complexity / dupes in touched files; gate fails only on NEW criticals — CRAP ≥ 100 ≈ cyc ≥ 10) **plus** a full dead-code baseline diff against `main`, because `--base` scoping provably misses code that *became* dead in untouched files (verified 2026-07-17). |
+| fallow auto-apply | ONLY branch-introduced dead code, after the config-string-wired guard (grep configs for path-string references first). Pre-existing code the branch made dead is never auto-deleted — it's flagged for the human. Lands as its own commit, BEFORE the review. |
+| automated review | `/code-review` on the full diff `main...HEAD` **including the fallow commit** — the review validates the mechanical deletions (the interlock). Confirmed, behavior-preserving fixes are applied as a second commit; behavioral/architectural findings are flag-only. One cheap fallow re-check after (max 2 fallow iterations), then the lane reruns on the final tree. |
+| dependency check | when the diff touches `pnpm-lock.yaml`/deps: `pnpm audit --prod` vs the same on `main` — new HIGH/CRITICAL advisories block. (GitHub's dependency-review API can't help here: task branches are never pushed.) |
+| human approval | unified four-bucket summary (auto-applied fallow / auto-applied review / needs-your-call / deferred debt) + diff review of the task branch, then explicit go-ahead before `agent-merge-main.sh`. |
 
 ### Phase 3 — the pre-promote gate (every production ship)
 
