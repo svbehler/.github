@@ -9,21 +9,29 @@ production.
 Tooling lives in `svbehler/agents-config` (`~/.agents/scripts/`); this doc and
 the daily queue script live here (`svbehler/.github`).
 
-## The flow
+## The phases
+
+A change travels through four phases. Two of them are gates with names used
+everywhere in tooling and docs: **pre-merge** (guards `main`) and
+**pre-promote** (guards `production`).
 
 ```
-task worktree ──▶ local-ci.sh fast lane ──▶ /code-review + human diff review
-    ──▶ agent-merge-main.sh (--no-ff merge, pushes main)      [ships nothing]
+Phase 1 TASK        worktree ──▶ implement ──▶ commit
+Phase 2 PRE-MERGE   local-ci pre-merge lane ──▶ /code-review + fallow audit
+                    ──▶ human diff review + approval
+                    ──▶ agent-merge-main.sh (--no-ff merge, pushes main)
+                                                              [ships nothing]
                      ⋮  tasks accumulate on main
-agent-promote-prod.sh                                          [the ship gate]
-    ──▶ pending list (git log production..main) + confirm
-    ──▶ pre-promote lane in a FRESH worktree (cold build + full e2e)
-    ──▶ Vercel repos:  vercel deploy --prod --skip-domain (staged, live
-        domains untouched) → smoke the staged URL → vercel promote →
-        live smoke → AUTO-ROLLBACK on failure
-    ──▶ targical:      d1 migrations --remote → wrangler deploy api+web
-        from the verified worktree → prod smoke
-    ──▶ production ref fast-forwards + pushes ONLY after everything is green
+Phase 3 PRE-PROMOTE agent-promote-prod.sh
+                    ──▶ pending list (git log production..main) + confirm
+                    ──▶ cold build + full e2e in a FRESH worktree
+                    ──▶ Neon migration preflight (auto when migrations pending)
+Phase 4 SHIP        Vercel:   vercel deploy --prod --skip-domain (staged, live
+                              domains untouched) → smoke staged URL →
+                              vercel promote → live smoke → AUTO-ROLLBACK
+                    targical: d1 migrations --remote → wrangler deploy api+web
+                              from the verified worktree → prod smoke
+                    ──▶ production ref fast-forwards + pushes ONLY when green
 ```
 
 - `main` is a **safe integration branch**: merging and pushing it deploys
@@ -34,16 +42,31 @@ agent-promote-prod.sh                                          [the ship gate]
   (`git log --first-parent main`); `git log production..main` is always the
   exact list of merged-but-not-shipped changes.
 
-## The gates
+### Phase 2 — the pre-merge gate (every merge into `main`)
 
-| Gate | When | What |
-| --- | --- | --- |
-| local-ci fast lane | every merge into main (run by `agent-merge-main.sh`; `SKIP_LOCAL_CI=1` for docs/config) | frozen install, lint, typecheck, unit tests, `prettier --check`, warm build |
-| review | before integration | local `/code-review` + human diff review of the task branch |
-| pre-promote lane | every production ship (run by `agent-promote-prod.sh`; `--skip-checks` for emergencies) | **cold** build in a fresh worktree (caches cleared) + full Playwright suite incl. axe gates |
-| staged deploy (Vercel) | every production ship | the deployment is built and smoked on Vercel's real builder + runtime **before** the live domains see it — catches platform-runtime failures (e.g. sharp 0.35 breaking only inside Vercel's function bundle, 2026-07-17) that no local check can observe |
-| prod smoke + auto-rollback | after promote | repo's `scripts/prod-smoke.sh` against the live domains; on failure Vercel repos roll back automatically (`vercel rollback`), targical prints the `wrangler rollback` commands |
-| pre-push hook | pushes of `production` (and `staging`) | gitleaks always (all branches) + typecheck/lint/unit on the deploy-coupled refs |
+| Step | What |
+| --- | --- |
+| pre-merge lane | `local-ci.sh` (currently named "fast lane" in the script): frozen install, lint, typecheck, unit tests, `prettier --check`, warm build. Run by `agent-merge-main.sh`; `SKIP_LOCAL_CI=1` for docs/config tier. |
+| automated review | `/code-review` on the task diff + changeset-scoped `fallow audit` (delta vs `main` only). Safe findings are auto-applied as their own commits; the rest are flagged. *(Skill in progress — until it lands, run `/code-review` manually.)* |
+| human approval | diff review of the task branch (including any auto-applied commits) + explicit go-ahead before `agent-merge-main.sh`. |
+
+### Phase 3 — the pre-promote gate (every production ship)
+
+| Step | What |
+| --- | --- |
+| pre-promote lane | `local-ci.sh --pre-promote`, run by `agent-promote-prod.sh` in a **fresh worktree** with caches cleared: cold build + full Playwright suite incl. axe gates. `--skip-checks` for emergencies only. |
+| migration preflight | automatic when the promote carries migration files: dry-runs pending migrations against a throwaway Neon branch of prod data. `--neon-preflight` forces, `--skip-preflight` skips loudly. |
+
+### Phase 4 — ship, verify, roll back
+
+| Step | What |
+| --- | --- |
+| staged deploy (Vercel) | the deployment is built and smoked on Vercel's real builder + runtime **before** the live domains see it — catches platform-runtime failures (e.g. sharp 0.35 breaking only inside Vercel's function bundle, 2026-07-17) that no local check can observe. On a failed staged build the script fetches the remote build-log tail (`vercel inspect --logs`) automatically. |
+| prod smoke + auto-rollback | repo's `scripts/prod-smoke.sh` against the live domains; on failure Vercel repos roll back automatically (`vercel rollback`), targical prints the `wrangler rollback` commands. |
+
+Standing backstop outside the phases: the `.githooks/pre-push` hook — gitleaks
+on every push, typecheck/lint/unit on pushes of the deploy-coupled refs
+(`production`, `staging`).
 
 ## Per-platform deploy mechanics
 
@@ -60,6 +83,17 @@ agent-promote-prod.sh                                          [the ship gate]
   upload the working tree — env files must never ship) and
   `scripts/prod-smoke.sh` (with a URL argument: smoke that staged deployment;
   without: smoke the live domains).
+
+  **CLI-deploy gotchas** (each cost a failed staged build on 2026-07-17):
+  - The build container has **no `.git`** and no usable git metadata — tools
+    that read the commit (PostHog sourcemap releases) need it passed
+    explicitly; the promote script sends `--build-env STAGED_GIT_COMMIT_SHA`.
+  - All `VERCEL_GIT_*` env vars **exist but are EMPTY STRINGS** on CLI
+    deploys, so `?? fallback` chains never fall through — treat `""` as unset
+    (see the repos' `next.config.ts` `envOrUndefined` helper).
+  - A staged-build failure's real error lives in the remote build log, not the
+    local CLI stream — `vercel inspect --logs <deployment-url>` fetches it
+    (the promote script now does this automatically on failure).
 - **targical (Cloudflare Workers):** deploys run from the verified pre-promote
   worktree via the local wrangler OAuth session (no CI, no Actions secrets):
   D1 migrations `--remote`, `wrangler deploy` for `apps/api` and `apps/web`,
@@ -86,10 +120,26 @@ is the platform-runtime class that only the staged deploy can catch.
 
 ## Code health & production errors (the recurring audit)
 
-Fallow and PostHog error triage no longer run per-change — the promote lane is
-ship-blockers only. Instead, a recurring local audit of `main` per product
-repo (fallow repo-wide deltas + a PostHog error sweep via MCP over the last 7
-days) turns findings into ordinary task branches that ride the normal flow.
+Fallow and PostHog error triage no longer run per-change — the pre-promote
+lane is ship-blockers only. Instead, a recurring local audit of `main` per
+product repo turns findings into ordinary task branches that re-enter the
+flow at Phase 1 and pass the same pre-merge gate as any other change:
+
+1. **Sweep** — fallow repo-wide (deltas vs the last audit's baselines) + a
+   PostHog error-tracking sweep via MCP (new/regressed issues over the last 7
+   days, ranked by occurrence count and users affected).
+2. **Triage** — each finding is classified: *fixable now* (clear root cause,
+   bounded change), *needs investigation* (repro unclear), or *accepted*
+   (annotate/baseline it so the next sweep stays quiet).
+3. **Fix branches** — every *fixable now* finding becomes its own task
+   worktree (`audit-<slug>`), implemented by a local agent, one finding per
+   branch so review and revert stay surgical. PostHog fixes cite the issue ID
+   and error signature in the commit body; the issue is marked resolved only
+   after the fix has shipped in a promote.
+4. **Same gate as everything else** — each branch goes through the full
+   pre-merge gate (lane + /code-review + fallow + human approval) and rides a
+   normal promote. The audit itself never merges or ships anything.
+
 The fallow safety rules (guard config-string-wired files, cold-build
 verification for dead-code waves) apply as written in the global CLAUDE.md.
 
