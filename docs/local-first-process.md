@@ -27,8 +27,10 @@ Phase 2 PRE-MERGE   finish-task skill: local-ci pre-merge lane
 Phase 3 PRE-PROMOTE agent-review-promote.sh
                     ──▶ HTML review of production..main (summary, diffstat,
                         risk-flagged file diffs) ──▶ HUMAN APPROVAL, scoped
-                        to the exact SHA (no bypass flag exists)
-                    agent-promote-prod.sh (refuses without that approval)
+                        to the exact SHA (page Promote button via
+                        agent-approve-server, or agent-approve on a terminal)
+                    agent-promote-prod.sh (refuses without that approval;
+                    the button path runs it automatically)
                     ──▶ pending list (git log production..main) + confirm
                     ──▶ cold build + full e2e in a FRESH worktree
                     ──▶ Neon migration preflight (auto when migrations pending)
@@ -67,8 +69,8 @@ branch. Its steps:
 
 | Step | What |
 | --- | --- |
-| **human review** | `agent-review-promote.sh` generates a self-contained HTML review of everything in `production..main`: shipped-task list, diffstat, per-file diffs with migrations/auth/payments/env/deploy/deps flagged and expanded first, plus an optional AI summary. Approving (a `y` on an interactive terminal — agents cannot self-approve) records an approval **scoped to the exact target SHA**; one more commit on main makes it stale and the review runs again. |
-| approval enforcement | `agent-promote-prod.sh` refuses to run without the recorded approval and consumes it on success. There is **deliberately no bypass flag** — the review guards the ship decision itself, and generating + approving one takes seconds even mid-emergency. `--yes` only skips the interactive re-confirmation. |
+| **human review** | `agent-review-promote.sh` generates a self-contained HTML review of everything in `production..main`: shipped-task list, diffstat, per-file diffs with migrations/auth/payments/env/deploy/deps flagged and expanded first, plus an optional AI summary. The human approves via the page's **Promote button** (agent-approve-server.py validates the per-review token + target SHA, records the approval, and runs the promote itself) or via `agent-approve` / this script on a terminal (`y`). Either way the approval is **scoped to the exact target SHA**; one more commit on main makes it stale and the review runs again. Agents never approve: the terminal path needs a tty, and the service's endpoints are policy-forbidden to agents (2026-07-18 decision — the tty-only hard gate was traded for the button; the promote lane's own protections are unchanged). |
+| approval enforcement | `agent-promote-prod.sh` refuses to run without the recorded approval and consumes it on success. There is **deliberately no bypass flag** — the review guards the ship decision itself, and generating + approving one takes seconds even mid-emergency. `--yes` only skips the interactive re-confirmation (the button path uses it, since the human just approved on the page). |
 | pre-promote lane | `local-ci.sh --pre-promote`, run by `agent-promote-prod.sh` in a **fresh worktree** with caches cleared: cold build + full Playwright suite incl. axe gates. `--skip-checks` for emergencies only — its use is recorded in the promote log and a git note. |
 | migration preflight | automatic when the promote carries migration files: dry-runs pending migrations against a throwaway Neon branch of prod data. `--neon-preflight` forces, `--skip-preflight` skips loudly (also recorded). |
 
